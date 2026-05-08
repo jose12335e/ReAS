@@ -1,0 +1,30 @@
+{
+  "name": "reas",
+  "version": "1.0.0",
+  "description": "Sistema de procesamiento de asistencia de empleados con React, Web Workers y Excel.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "lint": "eslint ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@tailwindcss/vite": "^4.2.4",
+    "@tanstack/react-table": "^8.21.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "exceljs": "^4.4.0",
+    "lucide-react": "^1.14.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "recharts": "^3.8.1",
+    "tailwindcss": "^4.2.4",
+    "vite": "^8.0.11",
+    "xlsx": "^0.18.5",
+    "zustand": "^5.0.13"
+  }
+}
