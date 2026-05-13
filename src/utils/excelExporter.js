@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import jceHeaderImage from '../assets/encabezadoJceBase64.js';
 import { buildReportWorkbookData } from './reportBuilder.js';
 import {
   buildEmployeeDisciplinarySummary,
@@ -33,6 +34,7 @@ const INSTITUTIONAL_HEADER =
   '&R&"Aptos,Bold"&11&K00A9E0JCE-DGH-6064-2026\n' +
   '&"Aptos,Bold"&11&K4B2A14REPORTE DE ASISTENCIA\n\n' +
   '&"Aptos,Bold"&11&KD99A00DIRECCIÓN DE GESTIÓN HUMANA';
+const INSTITUTIONAL_IMAGE_RATIO = 2203 / 325;
 const TABLE7_DISCIPLINARY_COLUMNS = {
   tardanzas: [4, 5],
   salidasTempranas: [6, 7],
@@ -218,9 +220,40 @@ function addTitleRow(worksheet, title, columnCount, rowNumber = 1) {
   worksheet.getRow(rowNumber).height = 18;
 }
 
-function addEditableTextBox(worksheet, noteText, columnCount) {
-  worksheet.mergeCells(1, 1, 3, columnCount);
-  const noteCell = worksheet.getCell(1, 1);
+function getInstitutionalHeaderImageId(workbook) {
+  if (!workbook._institutionalHeaderImageId) {
+    workbook._institutionalHeaderImageId = workbook.addImage({
+      base64: jceHeaderImage,
+      extension: 'jpeg',
+    });
+  }
+  return workbook._institutionalHeaderImageId;
+}
+
+function addInstitutionalImageHeader(workbook, worksheet, columnCount) {
+  const width = columnCount <= 3 ? 520 : 560;
+  const height = Math.round(width / INSTITUTIONAL_IMAGE_RATIO);
+  const imageId = getInstitutionalHeaderImageId(workbook);
+
+  worksheet.addImage(imageId, {
+    tl: { col: 0, row: 0 },
+    ext: { width, height },
+    editAs: 'oneCell',
+  });
+
+  worksheet.getRow(1).height = 24;
+  worksheet.getRow(2).height = 24;
+  worksheet.getRow(3).height = 24;
+  worksheet.getRow(4).height = 10;
+}
+
+function addEditableTextBox(workbook, worksheet, noteText, columnCount) {
+  addInstitutionalImageHeader(workbook, worksheet, columnCount);
+
+  const noteStartRow = 6;
+  const noteEndRow = 8;
+  worksheet.mergeCells(noteStartRow, 1, noteEndRow, columnCount);
+  const noteCell = worksheet.getCell(noteStartRow, 1);
   noteCell.value =
     noteText ??
     'Cuadro de texto editable. Escribe aqui la descripcion, nota o comentario de esta tabla.';
@@ -238,11 +271,11 @@ function addEditableTextBox(worksheet, noteText, columnCount) {
     right: { style: 'medium', color: { argb: 'FFD9A300' } },
   };
 
-  worksheet.getRow(1).height = 24;
-  worksheet.getRow(2).height = 24;
-  worksheet.getRow(3).height = 24;
+  worksheet.getRow(noteStartRow).height = 24;
+  worksheet.getRow(noteStartRow + 1).height = 24;
+  worksheet.getRow(noteEndRow).height = 24;
 
-  return 5;
+  return 10;
 }
 
 function addGroupRow(worksheet, rowNumber, label, columnCount) {
@@ -469,7 +502,7 @@ function applyTemplateSheetDefaults(worksheet) {
 function addSimpleListSheet(workbook, config) {
   const worksheet = workbook.addWorksheet(normalizeWorksheetName(config.sheetName));
   setColumns(worksheet, config.widths);
-  const tableTitleRow = addEditableTextBox(worksheet, config.noteText, 3);
+  const tableTitleRow = addEditableTextBox(workbook, worksheet, config.noteText, 3);
   addTitleRow(worksheet, config.title, 3, tableTitleRow);
   const headerRow = tableTitleRow + 1;
 
@@ -517,6 +550,7 @@ function addHoursVsWorkedSheet(workbook, employees) {
   const worksheet = workbook.addWorksheet('Tabla 6 Horas y dias');
   setColumns(worksheet, [32, 14, 14, 16, 16, 16, 17, 16]);
   const tableTitleRow = addEditableTextBox(
+    workbook,
     worksheet,
     'Cuadro de texto editable para explicar la relacion entre dias y horas a trabajar versus dias y horas trabajados.',
     8,
@@ -629,7 +663,7 @@ function addHoursVsWorkedSheet(workbook, employees) {
 function addEventualitiesSheet(workbook, config) {
   const worksheet = workbook.addWorksheet(normalizeWorksheetName(config.sheetName));
   setColumns(worksheet, [34, 14, 15, 13, 14, 15, 14, 13, 14, 17, 17]);
-  const tableTitleRow = addEditableTextBox(worksheet, config.noteText, 11);
+  const tableTitleRow = addEditableTextBox(workbook, worksheet, config.noteText, 11);
   addTitleRow(worksheet, config.title, 11, tableTitleRow);
 
   const headerRow = tableTitleRow + 1;
