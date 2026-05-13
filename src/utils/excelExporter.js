@@ -36,6 +36,11 @@ const INSTITUTIONAL_HEADER =
   '&L&G&R&"Aptos,Bold"&11&K00A9E0JCE-DGH-6064-2026\n' +
   '&"Aptos,Bold"&11&K4B2A14REPORTE DE ASISTENCIA\n\n' +
   '&"Aptos,Bold"&11&KD99A00DIRECCIÓN DE GESTIÓN HUMANA';
+const INSTITUTIONAL_FOOTER =
+  '&L&G&R&"Aptos,Regular"&10Av. Gregorio Luperón esq. Av. 27 de Febrero,\n' +
+  'Plaza de la Bandera, Santo Domingo, D. N.\n' +
+  'Tel.: 809-539-5419\n' +
+  'FO05 (PRO-SGI-001)06';
 const INSTITUTIONAL_HEADER_IMAGE_BASE64 = jceHeaderImage.replace(/^data:image\/jpeg;base64,/, '');
 const INSTITUTIONAL_FOOTER_IMAGE_BASE64 = footerImage.replace(/^data:image\/png;base64,/, '');
 const TABLE7_DISCIPLINARY_COLUMNS = {
@@ -191,7 +196,7 @@ function applyPageLayoutView(worksheet, columnCount, printPreset = 'table1') {
   };
   worksheet.headerFooter = {
     oddHeader: INSTITUTIONAL_HEADER,
-    oddFooter: '&L&G',
+    oddFooter: INSTITUTIONAL_FOOTER,
   };
 }
 
