@@ -44,17 +44,25 @@ const TABLE7_DISCIPLINARY_COLUMNS = {
   ausencias: [8, 9],
 };
 const PAGE_ROW_LIMITS = {
-  list: {
+  table1: {
     first: 33,
-    continuation: 38,
+    continuation: 39,
   },
-  hours: {
-    first: 20,
-    continuation: 21,
+  table2: {
+    first: 33,
+    continuation: 39,
   },
-  eventualities: {
-    first: 16,
-    continuation: 19,
+  table6: {
+    first: 57,
+    continuation: 63,
+  },
+  table7: {
+    first: 25,
+    continuation: 32,
+  },
+  table8: {
+    first: 25,
+    continuation: 32,
   },
 };
 
@@ -82,6 +90,34 @@ const TABLE_MARGIN_PRESETS_CM = {
     right: 1.3,
     bottom: 2.8,
     footer: 0.8,
+  },
+};
+
+const TABLE_PRINT_PRESETS = {
+  table1: {
+    marginPreset: 'list',
+    orientation: 'portrait',
+    scale: 90,
+  },
+  table2: {
+    marginPreset: 'list',
+    orientation: 'portrait',
+    scale: 98,
+  },
+  table6: {
+    marginPreset: 'hours',
+    orientation: 'portrait',
+    scale: 62,
+  },
+  table7: {
+    marginPreset: 'eventualities',
+    orientation: 'landscape',
+    scale: 74,
+  },
+  table8: {
+    marginPreset: 'eventualities',
+    orientation: 'landscape',
+    scale: 74,
   },
 };
 
@@ -119,29 +155,32 @@ function columnLetter(columnNumber) {
   return letters;
 }
 
-function applyPageLayoutView(worksheet, columnCount, marginPreset = 'list') {
-  const useLandscape = columnCount >= 8;
+function applyPageLayoutView(worksheet, columnCount, printPreset = 'table1') {
+  const pageConfig = TABLE_PRINT_PRESETS[printPreset] ?? TABLE_PRINT_PRESETS.table1;
   worksheet.views = [
     {
       state: 'normal',
       style: 'pageLayout',
       showGridLines: false,
-      zoomScale: useLandscape ? 70 : 90,
+      zoomScale: pageConfig.scale,
     },
   ];
   worksheet.pageSetup = {
     paperSize: PAPER_SIZE_LETTER,
-    orientation: useLandscape ? 'landscape' : 'portrait',
+    orientation: pageConfig.orientation,
     fitToPage: true,
     fitToWidth: 1,
     fitToHeight: 0,
+    scale: pageConfig.scale,
     pageOrder: 'downThenOver',
     horizontalCentered: true,
     verticalCentered: false,
     showGridLines: false,
     usePrinterDefaults: false,
+    horizontalDpi: 600,
+    verticalDpi: 600,
     printArea: `A1:${columnLetter(columnCount)}${worksheet.rowCount}`,
-    margins: pageMarginsFromCentimeters(marginPreset),
+    margins: pageMarginsFromCentimeters(pageConfig.marginPreset),
   };
   worksheet.headerFooter = {
     oddHeader: INSTITUTIONAL_HEADER,
@@ -742,7 +781,7 @@ function addSimpleListSheet(workbook, config) {
     worksheet,
     title: config.title,
     columnCount: 3,
-    rowLimit: PAGE_ROW_LIMITS.list,
+    rowLimit: PAGE_ROW_LIMITS[config.pagePreset] ?? PAGE_ROW_LIMITS.table1,
     addContinuationHeader: (continuationHeaderRow) =>
       addSimpleListHeader(worksheet, continuationHeaderRow, config.headers),
   });
@@ -786,7 +825,7 @@ function addSimpleListSheet(workbook, config) {
   worksheet.getRow(rowNumber).values = ['TOTAL', '', totalQuantity];
   styleTotalRow(worksheet, rowNumber, 3);
   applyTemplateSheetDefaults(worksheet);
-  applyPageLayoutView(worksheet, 3, 'list');
+  applyPageLayoutView(worksheet, 3, config.pagePreset ?? 'table1');
 }
 
 function addHoursVsWorkedSheet(workbook, employees) {
@@ -831,7 +870,7 @@ function addHoursVsWorkedSheet(workbook, employees) {
     worksheet,
     title: 'Tabla 6. Relacion de horas y dias a trabajar vs horas y dias trabajados',
     columnCount: 8,
-    rowLimit: PAGE_ROW_LIMITS.hours,
+    rowLimit: PAGE_ROW_LIMITS.table6,
     addContinuationHeader: (continuationHeaderRow) =>
       addHoursVsWorkedHeader(worksheet, continuationHeaderRow, headers),
   });
@@ -914,7 +953,7 @@ function addHoursVsWorkedSheet(workbook, employees) {
   });
   styleTotalRow(worksheet, rowNumber, 8);
   applyTemplateSheetDefaults(worksheet);
-  applyPageLayoutView(worksheet, 8, 'hours');
+  applyPageLayoutView(worksheet, 8, 'table6');
 }
 
 function addEventualitiesSheet(workbook, config) {
@@ -948,7 +987,7 @@ function addEventualitiesSheet(workbook, config) {
     worksheet,
     title: config.title,
     columnCount: 11,
-    rowLimit: PAGE_ROW_LIMITS.eventualities,
+    rowLimit: PAGE_ROW_LIMITS[config.pagePreset] ?? PAGE_ROW_LIMITS.table7,
     continuationHeaderRowCount: 2,
     addContinuationHeader: (continuationHeaderRow) =>
       addEventualitiesHeaderRows(worksheet, continuationHeaderRow, continuationHeaderRow + 1),
@@ -1045,7 +1084,7 @@ function addEventualitiesSheet(workbook, config) {
   styleTotalRow(worksheet, rowNumber, 11);
   if (config.applyFaultCategories) validateTable7FaultCoverage(worksheet, disciplinaryRows);
   applyTemplateSheetDefaults(worksheet);
-  applyPageLayoutView(worksheet, 11, 'eventualities');
+  applyPageLayoutView(worksheet, 11, config.pagePreset ?? 'table7');
 }
 
 function addTemplateSheets(workbook, result) {
@@ -1056,6 +1095,7 @@ function addTemplateSheets(workbook, result) {
     title: 'Tabla 1. Listado de vacaciones por colaborador/a',
     headers: ['Nombres y Apellidos', 'Eventualidad', 'Cantidad'],
     widths: [42, 22, 12],
+    pagePreset: 'table1',
     employees,
     filter: (employee) => employee.vacaciones > 0,
     eventuality: () => 'Vacaciones',
@@ -1067,6 +1107,7 @@ function addTemplateSheets(workbook, result) {
     title: 'Tabla 2. Listado de ponchado irregular por colaborador/a',
     headers: ['Nombres y Apellidos', 'Modo dePonchado', 'Cantidad'],
     widths: [42, 28, 12],
+    pagePreset: 'table2',
     employees,
     filter: (employee) => employee.ponchesIrregulares > 0,
     eventuality: () => 'Ponche irregular',
@@ -1081,6 +1122,7 @@ function addTemplateSheets(workbook, result) {
     employees,
     filter: (employee) => !String(employee.tipoHorario).toLowerCase().includes('extendido'),
     groupBy: (employee) => employee.ubicacion,
+    pagePreset: 'table7',
     applyFaultCategories: true,
     noteText:
       'La Tabla 7 consolida el registro de eventualidades justificadas (ausencias, permisos y licencias) y no justificadas (tardanzas, salidas anticipadas y ausencias). En el caso de las no justificadas, se incorpora una codificacion por colores que orienta sobre la posible medida disciplinaria conforme a la normativa vigente.\n\nNo obstante, su identificacion no implica la aplicacion automatica de sanciones, ya que corresponde al supervisor inmediato evaluar cada caso de manera individual y proceder segun los criterios establecidos en las Tablas 3, 4 y 5.',
@@ -1092,6 +1134,7 @@ function addTemplateSheets(workbook, result) {
     employees,
     filter: (employee) => String(employee.tipoHorario).toLowerCase().includes('extendido'),
     groupBy: (employee) => employee.departamento || employee.ubicacion,
+    pagePreset: 'table8',
     noteText:
       'La Tabla 8 consolida el registro de eventualidades justificadas y no justificadas del personal con horario extendido. Este cuadro es editable.',
   });
