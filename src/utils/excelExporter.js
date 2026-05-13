@@ -44,9 +44,9 @@ const TABLE7_DISCIPLINARY_COLUMNS = {
   ausencias: [8, 9],
 };
 const PAGE_ROW_LIMITS = {
-  list: 24,
-  hours: 22,
-  eventualities: 16,
+  list: 38,
+  hours: 34,
+  eventualities: 30,
 };
 
 const TABLE_MARGIN_PRESETS_CM = {
