@@ -113,6 +113,7 @@ const TABLE_PRINT_PRESETS = {
     marginPreset: 'eventualities',
     orientation: 'landscape',
     scale: 74,
+    minimumPrintRows: 115,
   },
   table8: {
     marginPreset: 'eventualities',
@@ -157,6 +158,7 @@ function columnLetter(columnNumber) {
 
 function applyPageLayoutView(worksheet, columnCount, printPreset = 'table1') {
   const pageConfig = TABLE_PRINT_PRESETS[printPreset] ?? TABLE_PRINT_PRESETS.table1;
+  const printRows = Math.max(worksheet.rowCount, pageConfig.minimumPrintRows ?? 0);
   worksheet.views = [
     {
       state: 'normal',
@@ -176,16 +178,32 @@ function applyPageLayoutView(worksheet, columnCount, printPreset = 'table1') {
     horizontalCentered: true,
     verticalCentered: false,
     showGridLines: false,
+    showRowColHeaders: false,
+    blackAndWhite: false,
+    draft: false,
+    cellComments: 'none',
+    errors: 'displayed',
     usePrinterDefaults: false,
     horizontalDpi: 600,
     verticalDpi: 600,
-    printArea: `A1:${columnLetter(columnCount)}${worksheet.rowCount}`,
+    printArea: `A1:${columnLetter(columnCount)}${printRows}`,
     margins: pageMarginsFromCentimeters(pageConfig.marginPreset),
   };
   worksheet.headerFooter = {
     oddHeader: INSTITUTIONAL_HEADER,
     oddFooter: '&L&G',
   };
+}
+
+function normalizePrintAreaDefinedNames(workbookXml) {
+  return workbookXml.replace(
+    /(_xlnm\.Print_Area"[^>]*>[^<]*!)\$([A-Z]+)(\d+):\$([A-Z]+)(\d+)(<\/definedName>)/g,
+    (_match, prefix, startColumn, startRow, endColumn, endRow, suffix) =>
+      `${prefix}$${startColumn}$${startRow}:$${endColumn}$${endRow}${suffix}`,
+  ).replace(
+    /(<definedName name="_xlnm\.Print_Area"[^>]*>.*?)&apos;(.*?)&apos;(.*?<\/definedName>)/g,
+    "$1'$2'$3",
+  );
 }
 
 function ensureWorksheetRelationshipNamespace(sheetXml) {
@@ -262,6 +280,10 @@ function createHeaderFooterImageVml({ headerRelId, footerRelId }) {
 
 async function addInstitutionalHeaderFooterImages(buffer) {
   const zip = await JSZip.loadAsync(buffer);
+  const workbookPath = 'xl/workbook.xml';
+  const workbookXml = await zip.file(workbookPath)?.async('string');
+  if (workbookXml) zip.file(workbookPath, normalizePrintAreaDefinedNames(workbookXml));
+
   const worksheetPaths = Object.keys(zip.files)
     .filter((path) => /^xl\/worksheets\/sheet\d+\.xml$/.test(path))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
