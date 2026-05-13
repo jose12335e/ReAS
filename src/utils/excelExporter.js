@@ -111,23 +111,26 @@ function columnLetter(columnNumber) {
 }
 
 function applyPageLayoutView(worksheet, columnCount, marginPreset = 'list') {
+  const useLandscape = columnCount >= 8;
   worksheet.views = [
     {
       state: 'normal',
       style: 'pageLayout',
       showGridLines: false,
-      zoomScale: 90,
+      zoomScale: useLandscape ? 70 : 90,
     },
   ];
   worksheet.pageSetup = {
     paperSize: PAPER_SIZE_LETTER,
-    orientation: columnCount > 8 ? 'landscape' : 'portrait',
+    orientation: useLandscape ? 'landscape' : 'portrait',
     fitToPage: true,
     fitToWidth: 1,
     fitToHeight: 0,
+    pageOrder: 'downThenOver',
     horizontalCentered: true,
     verticalCentered: false,
     showGridLines: false,
+    usePrinterDefaults: false,
     printArea: `A1:${columnLetter(columnCount)}${worksheet.rowCount}`,
     margins: pageMarginsFromCentimeters(marginPreset),
   };
