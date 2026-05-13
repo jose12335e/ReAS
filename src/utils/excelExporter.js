@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
 import jceHeaderImage from '../assets/encabezadoJceBase64.js';
 import { buildReportWorkbookData } from './reportBuilder.js';
 import {
@@ -31,10 +32,10 @@ const TEMPLATE_COLORS = {
 const TIME_FORMAT = '[h]:mm:ss';
 const PAPER_SIZE_LETTER = 1;
 const INSTITUTIONAL_HEADER =
-  '&R&"Aptos,Bold"&11&K00A9E0JCE-DGH-6064-2026\n' +
+  '&L&G&R&"Aptos,Bold"&11&K00A9E0JCE-DGH-6064-2026\n' +
   '&"Aptos,Bold"&11&K4B2A14REPORTE DE ASISTENCIA\n\n' +
   '&"Aptos,Bold"&11&KD99A00DIRECCIÓN DE GESTIÓN HUMANA';
-const INSTITUTIONAL_IMAGE_RATIO = 2203 / 325;
+const INSTITUTIONAL_HEADER_IMAGE_BASE64 = jceHeaderImage.replace(/^data:image\/jpeg;base64,/, '');
 const TABLE7_DISCIPLINARY_COLUMNS = {
   tardanzas: [4, 5],
   salidasTempranas: [6, 7],
@@ -129,6 +130,140 @@ function applyPageLayoutView(worksheet, columnCount, marginPreset = 'list') {
   };
 }
 
+function ensureWorksheetRelationshipNamespace(sheetXml) {
+  if (sheetXml.includes('xmlns:r=')) return sheetXml;
+  return sheetXml.replace(
+    '<worksheet ',
+    '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ',
+  );
+}
+
+function getNextRelationshipId(relsXml) {
+  const ids = Array.from(relsXml.matchAll(/Id="rId(\d+)"/g), (match) => Number(match[1]));
+  return `rId${Math.max(0, ...ids) + 1}`;
+}
+
+function ensureWorksheetRelsXml(relsXml = '') {
+  return (
+    relsXml ||
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
+  );
+}
+
+function appendRelationship(relsXml, { id, type, target }) {
+  const relationship = `<Relationship Id="${id}" Type="${type}" Target="${target}"/>`;
+  return relsXml.replace('</Relationships>', `${relationship}</Relationships>`);
+}
+
+function ensureContentTypeDefault(contentTypesXml, extension, contentType) {
+  if (contentTypesXml.includes(`Extension="${extension}"`)) return contentTypesXml;
+  return contentTypesXml.replace(
+    '</Types>',
+    `<Default Extension="${extension}" ContentType="${contentType}"/></Types>`,
+  );
+}
+
+function createHeaderImageVml(vmlRelId) {
+  return `<xml xmlns:v="urn:schemas-microsoft-com:vml"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel">
+ <o:shapelayout v:ext="edit">
+  <o:idmap v:ext="edit" data="1"/>
+ </o:shapelayout><v:shapetype id="_x0000_t75" coordsize="21600,21600" o:spt="75"
+  o:preferrelative="t" path="m@4@5l@4@11@9@11@9@5xe" filled="f" stroked="f">
+  <v:stroke joinstyle="miter"/>
+  <v:formulas>
+   <v:f eqn="if lineDrawn pixelLineWidth 0"/>
+   <v:f eqn="sum @0 1 0"/>
+   <v:f eqn="sum 0 0 @1"/>
+   <v:f eqn="prod @2 1 2"/>
+   <v:f eqn="prod @3 21600 pixelWidth"/>
+   <v:f eqn="prod @3 21600 pixelHeight"/>
+   <v:f eqn="sum @0 0 1"/>
+   <v:f eqn="prod @6 1 2"/>
+   <v:f eqn="prod @7 21600 pixelWidth"/>
+   <v:f eqn="sum @8 21600 0"/>
+   <v:f eqn="prod @7 21600 pixelHeight"/>
+   <v:f eqn="sum @10 21600 0"/>
+  </v:formulas>
+  <v:path o:extrusionok="f" gradientshapeok="t" o:connecttype="rect"/>
+  <o:lock v:ext="edit" aspectratio="t"/>
+ </v:shapetype><v:shape id="LH" o:spid="_x0000_s1025" type="#_x0000_t75"
+  style='position:absolute;margin-left:0;margin-top:0;width:528.5pt;height:78pt;
+  z-index:1'>
+  <v:imagedata o:relid="${vmlRelId}" o:title="encabezado-jce"/>
+  <o:lock v:ext="edit" rotation="t"/>
+ </v:shape></xml>`;
+}
+
+async function addInstitutionalHeaderImages(buffer) {
+  const zip = await JSZip.loadAsync(buffer);
+  const worksheetPaths = Object.keys(zip.files)
+    .filter((path) => /^xl\/worksheets\/sheet\d+\.xml$/.test(path))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  const contentTypesPath = '[Content_Types].xml';
+  let contentTypesXml = await zip.file(contentTypesPath).async('string');
+  contentTypesXml = ensureContentTypeDefault(contentTypesXml, 'jpeg', 'image/jpeg');
+  contentTypesXml = ensureContentTypeDefault(
+    contentTypesXml,
+    'vml',
+    'application/vnd.openxmlformats-officedocument.vmlDrawing',
+  );
+  zip.file(contentTypesPath, contentTypesXml);
+  zip.file('xl/media/encabezado-jce.jpeg', INSTITUTIONAL_HEADER_IMAGE_BASE64, { base64: true });
+
+  let headerIndex = 1;
+  for (const worksheetPath of worksheetPaths) {
+    let sheetXml = await zip.file(worksheetPath).async('string');
+    if (!sheetXml.includes('JCE-DGH-6064-2026') || !sheetXml.includes('&amp;L&amp;G')) {
+      continue;
+    }
+
+    const sheetMatch = worksheetPath.match(/sheet(\d+)\.xml$/);
+    const sheetNumber = sheetMatch?.[1] ?? String(headerIndex);
+    const relsPath = `xl/worksheets/_rels/sheet${sheetNumber}.xml.rels`;
+    const vmlPath = `xl/drawings/vmlDrawingHeader${headerIndex}.vml`;
+    const vmlRelsPath = `xl/drawings/_rels/vmlDrawingHeader${headerIndex}.vml.rels`;
+
+    let relsXml = ensureWorksheetRelsXml(await zip.file(relsPath)?.async('string'));
+    const legacyDrawingRelId = getNextRelationshipId(relsXml);
+    relsXml = appendRelationship(relsXml, {
+      id: legacyDrawingRelId,
+      type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing',
+      target: `../drawings/vmlDrawingHeader${headerIndex}.vml`,
+    });
+    zip.file(relsPath, relsXml);
+
+    zip.file(vmlPath, createHeaderImageVml('rId1'));
+    zip.file(
+      vmlRelsPath,
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/encabezado-jce.jpeg"/>' +
+        '</Relationships>',
+    );
+
+    sheetXml = ensureWorksheetRelationshipNamespace(sheetXml);
+    if (sheetXml.includes('<legacyDrawingHF ')) {
+      sheetXml = sheetXml.replace(
+        /<legacyDrawingHF[^>]*\/>/,
+        `<legacyDrawingHF r:id="${legacyDrawingRelId}"/>`,
+      );
+    } else {
+      sheetXml = sheetXml.replace(
+        '</worksheet>',
+        `<legacyDrawingHF r:id="${legacyDrawingRelId}"/></worksheet>`,
+      );
+    }
+    zip.file(worksheetPath, sheetXml);
+    headerIndex += 1;
+  }
+
+  return zip.generateAsync({ type: 'arraybuffer' });
+}
+
 function addRowsToWorksheet(workbook, sheetName, rows = []) {
   const worksheet = workbook.addWorksheet(normalizeWorksheetName(sheetName), {
     views: [{ state: 'frozen', ySplit: 1 }],
@@ -220,38 +355,9 @@ function addTitleRow(worksheet, title, columnCount, rowNumber = 1) {
   worksheet.getRow(rowNumber).height = 18;
 }
 
-function getInstitutionalHeaderImageId(workbook) {
-  if (!workbook._institutionalHeaderImageId) {
-    workbook._institutionalHeaderImageId = workbook.addImage({
-      base64: jceHeaderImage,
-      extension: 'jpeg',
-    });
-  }
-  return workbook._institutionalHeaderImageId;
-}
-
-function addInstitutionalImageHeader(workbook, worksheet, columnCount) {
-  const width = columnCount <= 3 ? 520 : 560;
-  const height = Math.round(width / INSTITUTIONAL_IMAGE_RATIO);
-  const imageId = getInstitutionalHeaderImageId(workbook);
-
-  worksheet.addImage(imageId, {
-    tl: { col: 0, row: 0 },
-    ext: { width, height },
-    editAs: 'oneCell',
-  });
-
-  worksheet.getRow(1).height = 24;
-  worksheet.getRow(2).height = 24;
-  worksheet.getRow(3).height = 24;
-  worksheet.getRow(4).height = 10;
-}
-
 function addEditableTextBox(workbook, worksheet, noteText, columnCount) {
-  addInstitutionalImageHeader(workbook, worksheet, columnCount);
-
-  const noteStartRow = 6;
-  const noteEndRow = 8;
+  const noteStartRow = 1;
+  const noteEndRow = 3;
   worksheet.mergeCells(noteStartRow, 1, noteEndRow, columnCount);
   const noteCell = worksheet.getCell(noteStartRow, 1);
   noteCell.value =
@@ -275,7 +381,7 @@ function addEditableTextBox(workbook, worksheet, noteText, columnCount) {
   worksheet.getRow(noteStartRow + 1).height = 24;
   worksheet.getRow(noteEndRow).height = 24;
 
-  return 10;
+  return 5;
 }
 
 function addGroupRow(worksheet, rowNumber, label, columnCount) {
@@ -861,7 +967,8 @@ export async function exportAttendanceReport(result) {
   reportData.sheets.forEach((sheet) => addRowsToWorksheet(workbook, sheet.name, sheet.rows));
   addTemplateSheets(workbook, result);
 
-  return workbook.xlsx.writeBuffer();
+  const buffer = await workbook.xlsx.writeBuffer();
+  return addInstitutionalHeaderImages(buffer);
 }
 
 export function downloadArrayBuffer(buffer, filename) {
