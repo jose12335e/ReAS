@@ -43,6 +43,11 @@ const TABLE7_DISCIPLINARY_COLUMNS = {
   salidasTempranas: [6, 7],
   ausencias: [8, 9],
 };
+const PAGE_ROW_LIMITS = {
+  list: 24,
+  hours: 22,
+  eventualities: 16,
+};
 
 const TABLE_MARGIN_PRESETS_CM = {
   list: {
@@ -365,6 +370,10 @@ function addTitleRow(worksheet, title, columnCount, rowNumber = 1) {
   worksheet.getRow(rowNumber).height = 18;
 }
 
+function addContinuationTitleRow(worksheet, title, columnCount, rowNumber) {
+  addTitleRow(worksheet, `Continuación-${title}`, columnCount, rowNumber);
+}
+
 function addEditableTextBox(workbook, worksheet, noteText, columnCount) {
   const noteStartRow = 1;
   const noteEndRow = 3;
@@ -600,191 +609,52 @@ function addNoDataRow(worksheet, rowNumber, columnCount) {
   applyBorder(cell);
 }
 
-function applyTemplateSheetDefaults(worksheet) {
-  worksheet.properties.defaultRowHeight = 18;
-  worksheet.eachRow((row) => {
-    row.eachCell((cell) => {
-      cell.font = {
-        name: 'Aptos',
-        size: 10,
-        bold: cell.font?.bold ?? false,
-        italic: cell.font?.italic ?? false,
-        color: cell.font?.color,
-      };
-    });
-  });
-}
+function createContinuationManager({
+  worksheet,
+  title,
+  columnCount,
+  rowLimit,
+  addContinuationHeader,
+  continuationHeaderRowCount = 1,
+}) {
+  let rowsOnPage = 0;
 
-function addSimpleListSheet(workbook, config) {
-  const worksheet = workbook.addWorksheet(normalizeWorksheetName(config.sheetName));
-  setColumns(worksheet, config.widths);
-  const tableTitleRow = addEditableTextBox(workbook, worksheet, config.noteText, 3);
-  addTitleRow(worksheet, config.title, 3, tableTitleRow);
-  const headerRow = tableTitleRow + 1;
-
-  config.headers.forEach((header, index) => {
-    const cell = worksheet.getCell(headerRow, index + 1);
-    cell.value = header;
-  });
-  styleRowCells(worksheet, headerRow, 1, 3, { fill: TEMPLATE_COLORS.gold });
-
-  let rowNumber = headerRow + 1;
-  const groups = groupBy(config.employees, (employee) => employee.ubicacion);
-  let hasRows = false;
-  let totalQuantity = 0;
-
-  groups.forEach(([groupName, employees]) => {
-    const filtered = employees.filter(config.filter);
-    if (!filtered.length) return;
-    addGroupRow(worksheet, rowNumber, groupName, 3);
-    rowNumber += 1;
-
-    filtered.forEach((employee) => {
-      worksheet.getCell(rowNumber, 1).value = collaboratorName(employee);
-      worksheet.getCell(rowNumber, 2).value = config.eventuality(employee);
-      worksheet.getCell(rowNumber, 3).value = config.quantity(employee);
-      totalQuantity += Number(config.quantity(employee) || 0);
-      styleRowCells(worksheet, rowNumber, 1, 3, { horizontal: 'left' });
-      worksheet.getCell(rowNumber, 3).alignment = { vertical: 'middle', horizontal: 'center' };
-      rowNumber += 1;
-      hasRows = true;
-    });
-  });
-
-  if (!hasRows) {
-    addNoDataRow(worksheet, rowNumber, 3);
-    rowNumber += 1;
-  }
-
-  worksheet.getRow(rowNumber).values = ['TOTAL', '', totalQuantity];
-  styleTotalRow(worksheet, rowNumber, 3);
-  applyTemplateSheetDefaults(worksheet);
-  applyPageLayoutView(worksheet, 3, 'list');
-}
-
-function addHoursVsWorkedSheet(workbook, employees) {
-  const worksheet = workbook.addWorksheet('Tabla 6 Horas y dias');
-  setColumns(worksheet, [32, 14, 14, 16, 16, 16, 17, 16]);
-  const tableTitleRow = addEditableTextBox(
-    workbook,
-    worksheet,
-    'Cuadro de texto editable para explicar la relacion entre dias y horas a trabajar versus dias y horas trabajados.',
-    8,
-  );
-  addTitleRow(
-    worksheet,
-    'Tabla 6. Relacion de horas y dias a trabajar vs horas y dias trabajados',
-    8,
-    tableTitleRow,
-  );
-  const headerRow = tableTitleRow + 1;
-
-  const headers = [
-    'Colaborador',
-    'Dias a trabajar',
-    'Dias trabajados',
-    '% de dias trabajados',
-    'Horas a trabajar',
-    'Horas trabajadas',
-    '% de horas trabajadas',
-    'Tasa de Ausentismo',
-  ];
-
-  headers.forEach((header, index) => {
-    const cell = worksheet.getCell(headerRow, index + 1);
-    cell.value = header;
-  });
-
-  [1].forEach((col) => fillCell(worksheet.getCell(headerRow, col), TEMPLATE_COLORS.gold));
-  applyTable6BlockFills(worksheet, headerRow);
-  styleRowCells(worksheet, headerRow, 1, 8, { font: { bold: false } });
-
-  let rowNumber = headerRow + 1;
-  let hasRows = false;
-  const totals = {
-    diasATrabajar: 0,
-    diasTrabajados: 0,
-    horasEsperadas: 0,
-    horasReconocidas: 0,
+  return {
+    beforeRows(rowNumber, rowsNeeded = 1) {
+      if (rowsOnPage > 0 && rowsOnPage + rowsNeeded > rowLimit) {
+        worksheet.getRow(rowNumber - 1).addPageBreak();
+        addContinuationTitleRow(worksheet, title, columnCount, rowNumber);
+        addContinuationHeader(rowNumber + 1);
+        rowsOnPage = 0;
+        return rowNumber + 1 + continuationHeaderRowCount;
+      }
+      return rowNumber;
+    },
+    addRows(count = 1) {
+      rowsOnPage += count;
+    },
   };
-
-  groupBy(employees, (employee) => employee.ubicacion).forEach(([groupName, groupEmployees]) => {
-    addGroupRow(worksheet, rowNumber, groupName, 8);
-    rowNumber += 1;
-
-    groupEmployees.forEach((employee) => {
-      const dayRate = employee.diasATrabajar > 0 ? employee.diasTrabajadosCompletos / employee.diasATrabajar : 0;
-      const hourRate = employee.horasEsperadas > 0 ? employee.horasReconocidas / employee.horasEsperadas : 0;
-      totals.diasATrabajar += Number(employee.diasATrabajar || 0);
-      totals.diasTrabajados += Number(employee.diasTrabajadosCompletos || 0);
-      totals.horasEsperadas += Number(employee.horasEsperadas || 0);
-      totals.horasReconocidas += Number(employee.horasReconocidas || 0);
-
-      worksheet.getRow(rowNumber).values = [
-        collaboratorName(employee),
-        employee.diasATrabajar,
-        employee.diasTrabajadosCompletos,
-        dayRate,
-        hoursToExcelDuration(employee.horasEsperadas),
-        hoursToExcelDuration(employee.horasReconocidas),
-        hourRate,
-        employee.tasaAusentismo / 100,
-      ];
-      worksheet.getCell(rowNumber, 4).numFmt = '0%';
-      worksheet.getCell(rowNumber, 5).numFmt = TIME_FORMAT;
-      worksheet.getCell(rowNumber, 6).numFmt = TIME_FORMAT;
-      worksheet.getCell(rowNumber, 7).numFmt = '0%';
-      worksheet.getCell(rowNumber, 8).numFmt = '0%';
-      styleRowCells(worksheet, rowNumber, 1, 8, { horizontal: 'center' });
-      applyTable6BlockFills(worksheet, rowNumber);
-      worksheet.getCell(rowNumber, 1).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
-      rowNumber += 1;
-      hasRows = true;
-    });
-  });
-
-  if (!hasRows) {
-    addNoDataRow(worksheet, rowNumber, 8);
-    rowNumber += 1;
-  }
-
-  const totalDayRate =
-    totals.diasATrabajar > 0 ? totals.diasTrabajados / totals.diasATrabajar : 0;
-  const totalHourRate =
-    totals.horasEsperadas > 0 ? totals.horasReconocidas / totals.horasEsperadas : 0;
-  const totalAbsenceRate =
-    totals.horasEsperadas > 0 ? Math.max(0, 1 - totalHourRate) : 0;
-
-  worksheet.getRow(rowNumber).values = [
-    'TOTAL',
-    totals.diasATrabajar,
-    totals.diasTrabajados,
-    totalDayRate,
-    hoursToExcelDuration(totals.horasEsperadas),
-    hoursToExcelDuration(totals.horasReconocidas),
-    totalHourRate,
-    totalAbsenceRate,
-  ];
-  [4, 7, 8].forEach((column) => {
-    worksheet.getCell(rowNumber, column).numFmt = '0%';
-  });
-  [5, 6].forEach((column) => {
-    worksheet.getCell(rowNumber, column).numFmt = TIME_FORMAT;
-  });
-  styleTotalRow(worksheet, rowNumber, 8);
-  applyTemplateSheetDefaults(worksheet);
-  applyPageLayoutView(worksheet, 8, 'hours');
 }
 
-function addEventualitiesSheet(workbook, config) {
-  const worksheet = workbook.addWorksheet(normalizeWorksheetName(config.sheetName));
-  setColumns(worksheet, [34, 14, 15, 13, 14, 15, 14, 13, 14, 17, 17]);
-  const tableTitleRow = addEditableTextBox(workbook, worksheet, config.noteText, 11);
-  addTitleRow(worksheet, config.title, 11, tableTitleRow);
+function addSimpleListHeader(worksheet, rowNumber, headers) {
+  headers.forEach((header, index) => {
+    const cell = worksheet.getCell(rowNumber, index + 1);
+    cell.value = header;
+  });
+  styleRowCells(worksheet, rowNumber, 1, 3, { fill: TEMPLATE_COLORS.gold });
+}
 
-  const headerRow = tableTitleRow + 1;
-  const subHeaderRow = tableTitleRow + 2;
+function addHoursVsWorkedHeader(worksheet, rowNumber, headers) {
+  headers.forEach((header, index) => {
+    const cell = worksheet.getCell(rowNumber, index + 1);
+    cell.value = header;
+  });
+  [1].forEach((col) => fillCell(worksheet.getCell(rowNumber, col), TEMPLATE_COLORS.gold));
+  applyTable6BlockFills(worksheet, rowNumber);
+  styleRowCells(worksheet, rowNumber, 1, 8, { font: { bold: false } });
+}
 
+function addEventualitiesHeaderRows(worksheet, headerRow, subHeaderRow) {
   worksheet.mergeCells(headerRow, 1, subHeaderRow, 1);
   worksheet.getCell(headerRow, 1).value = 'Colaborador/a';
   worksheet.mergeCells(headerRow, 2, headerRow, 3);
@@ -820,6 +690,225 @@ function addEventualitiesSheet(workbook, config) {
   [8, 9].forEach((col) => fillCell(worksheet.getCell(subHeaderRow, col), TEMPLATE_COLORS.paleGreen));
   worksheet.getRow(headerRow).height = 22;
   worksheet.getRow(subHeaderRow).height = 38;
+}
+
+function applyTemplateSheetDefaults(worksheet) {
+  worksheet.properties.defaultRowHeight = 18;
+  worksheet.eachRow((row) => {
+    row.eachCell((cell) => {
+      cell.font = {
+        name: 'Aptos',
+        size: 10,
+        bold: cell.font?.bold ?? false,
+        italic: cell.font?.italic ?? false,
+        color: cell.font?.color,
+      };
+    });
+  });
+}
+
+function addSimpleListSheet(workbook, config) {
+  const worksheet = workbook.addWorksheet(normalizeWorksheetName(config.sheetName));
+  setColumns(worksheet, config.widths);
+  const tableTitleRow = addEditableTextBox(workbook, worksheet, config.noteText, 3);
+  addTitleRow(worksheet, config.title, 3, tableTitleRow);
+  const headerRow = tableTitleRow + 1;
+
+  addSimpleListHeader(worksheet, headerRow, config.headers);
+
+  let rowNumber = headerRow + 1;
+  const groups = groupBy(config.employees, (employee) => employee.ubicacion);
+  let hasRows = false;
+  let totalQuantity = 0;
+  const pagination = createContinuationManager({
+    worksheet,
+    title: config.title,
+    columnCount: 3,
+    rowLimit: PAGE_ROW_LIMITS.list,
+    addContinuationHeader: (continuationHeaderRow) =>
+      addSimpleListHeader(worksheet, continuationHeaderRow, config.headers),
+  });
+
+  groups.forEach(([groupName, employees]) => {
+    const filtered = employees.filter(config.filter);
+    if (!filtered.length) return;
+    rowNumber = pagination.beforeRows(rowNumber, Math.min(2, filtered.length + 1));
+    addGroupRow(worksheet, rowNumber, groupName, 3);
+    rowNumber += 1;
+    pagination.addRows(1);
+
+    filtered.forEach((employee) => {
+      const nextRowNumber = pagination.beforeRows(rowNumber, 1);
+      if (nextRowNumber !== rowNumber) {
+        rowNumber = nextRowNumber;
+        addGroupRow(worksheet, rowNumber, groupName, 3);
+        rowNumber += 1;
+        pagination.addRows(1);
+      }
+      worksheet.getCell(rowNumber, 1).value = collaboratorName(employee);
+      worksheet.getCell(rowNumber, 2).value = config.eventuality(employee);
+      worksheet.getCell(rowNumber, 3).value = config.quantity(employee);
+      totalQuantity += Number(config.quantity(employee) || 0);
+      styleRowCells(worksheet, rowNumber, 1, 3, { horizontal: 'left' });
+      worksheet.getCell(rowNumber, 3).alignment = { vertical: 'middle', horizontal: 'center' };
+      rowNumber += 1;
+      pagination.addRows(1);
+      hasRows = true;
+    });
+  });
+
+  if (!hasRows) {
+    rowNumber = pagination.beforeRows(rowNumber, 1);
+    addNoDataRow(worksheet, rowNumber, 3);
+    rowNumber += 1;
+    pagination.addRows(1);
+  }
+
+  rowNumber = pagination.beforeRows(rowNumber, 1);
+  worksheet.getRow(rowNumber).values = ['TOTAL', '', totalQuantity];
+  styleTotalRow(worksheet, rowNumber, 3);
+  applyTemplateSheetDefaults(worksheet);
+  applyPageLayoutView(worksheet, 3, 'list');
+}
+
+function addHoursVsWorkedSheet(workbook, employees) {
+  const worksheet = workbook.addWorksheet('Tabla 6 Horas y dias');
+  setColumns(worksheet, [32, 14, 14, 16, 16, 16, 17, 16]);
+  const tableTitleRow = addEditableTextBox(
+    workbook,
+    worksheet,
+    'Cuadro de texto editable para explicar la relacion entre dias y horas a trabajar versus dias y horas trabajados.',
+    8,
+  );
+  addTitleRow(
+    worksheet,
+    'Tabla 6. Relacion de horas y dias a trabajar vs horas y dias trabajados',
+    8,
+    tableTitleRow,
+  );
+  const headerRow = tableTitleRow + 1;
+
+  const headers = [
+    'Colaborador',
+    'Dias a trabajar',
+    'Dias trabajados',
+    '% de dias trabajados',
+    'Horas a trabajar',
+    'Horas trabajadas',
+    '% de horas trabajadas',
+    'Tasa de Ausentismo',
+  ];
+
+  addHoursVsWorkedHeader(worksheet, headerRow, headers);
+
+  let rowNumber = headerRow + 1;
+  let hasRows = false;
+  const totals = {
+    diasATrabajar: 0,
+    diasTrabajados: 0,
+    horasEsperadas: 0,
+    horasReconocidas: 0,
+  };
+  const pagination = createContinuationManager({
+    worksheet,
+    title: 'Tabla 6. Relacion de horas y dias a trabajar vs horas y dias trabajados',
+    columnCount: 8,
+    rowLimit: PAGE_ROW_LIMITS.hours,
+    addContinuationHeader: (continuationHeaderRow) =>
+      addHoursVsWorkedHeader(worksheet, continuationHeaderRow, headers),
+  });
+
+  groupBy(employees, (employee) => employee.ubicacion).forEach(([groupName, groupEmployees]) => {
+    rowNumber = pagination.beforeRows(rowNumber, Math.min(2, groupEmployees.length + 1));
+    addGroupRow(worksheet, rowNumber, groupName, 8);
+    rowNumber += 1;
+    pagination.addRows(1);
+
+    groupEmployees.forEach((employee) => {
+      const nextRowNumber = pagination.beforeRows(rowNumber, 1);
+      if (nextRowNumber !== rowNumber) {
+        rowNumber = nextRowNumber;
+        addGroupRow(worksheet, rowNumber, groupName, 8);
+        rowNumber += 1;
+        pagination.addRows(1);
+      }
+      const dayRate = employee.diasATrabajar > 0 ? employee.diasTrabajadosCompletos / employee.diasATrabajar : 0;
+      const hourRate = employee.horasEsperadas > 0 ? employee.horasReconocidas / employee.horasEsperadas : 0;
+      totals.diasATrabajar += Number(employee.diasATrabajar || 0);
+      totals.diasTrabajados += Number(employee.diasTrabajadosCompletos || 0);
+      totals.horasEsperadas += Number(employee.horasEsperadas || 0);
+      totals.horasReconocidas += Number(employee.horasReconocidas || 0);
+
+      worksheet.getRow(rowNumber).values = [
+        collaboratorName(employee),
+        employee.diasATrabajar,
+        employee.diasTrabajadosCompletos,
+        dayRate,
+        hoursToExcelDuration(employee.horasEsperadas),
+        hoursToExcelDuration(employee.horasReconocidas),
+        hourRate,
+        employee.tasaAusentismo / 100,
+      ];
+      worksheet.getCell(rowNumber, 4).numFmt = '0%';
+      worksheet.getCell(rowNumber, 5).numFmt = TIME_FORMAT;
+      worksheet.getCell(rowNumber, 6).numFmt = TIME_FORMAT;
+      worksheet.getCell(rowNumber, 7).numFmt = '0%';
+      worksheet.getCell(rowNumber, 8).numFmt = '0%';
+      styleRowCells(worksheet, rowNumber, 1, 8, { horizontal: 'center' });
+      applyTable6BlockFills(worksheet, rowNumber);
+      worksheet.getCell(rowNumber, 1).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+      rowNumber += 1;
+      pagination.addRows(1);
+      hasRows = true;
+    });
+  });
+
+  if (!hasRows) {
+    rowNumber = pagination.beforeRows(rowNumber, 1);
+    addNoDataRow(worksheet, rowNumber, 8);
+    rowNumber += 1;
+    pagination.addRows(1);
+  }
+
+  const totalDayRate =
+    totals.diasATrabajar > 0 ? totals.diasTrabajados / totals.diasATrabajar : 0;
+  const totalHourRate =
+    totals.horasEsperadas > 0 ? totals.horasReconocidas / totals.horasEsperadas : 0;
+  const totalAbsenceRate =
+    totals.horasEsperadas > 0 ? Math.max(0, 1 - totalHourRate) : 0;
+
+  rowNumber = pagination.beforeRows(rowNumber, 1);
+  worksheet.getRow(rowNumber).values = [
+    'TOTAL',
+    totals.diasATrabajar,
+    totals.diasTrabajados,
+    totalDayRate,
+    hoursToExcelDuration(totals.horasEsperadas),
+    hoursToExcelDuration(totals.horasReconocidas),
+    totalHourRate,
+    totalAbsenceRate,
+  ];
+  [4, 7, 8].forEach((column) => {
+    worksheet.getCell(rowNumber, column).numFmt = '0%';
+  });
+  [5, 6].forEach((column) => {
+    worksheet.getCell(rowNumber, column).numFmt = TIME_FORMAT;
+  });
+  styleTotalRow(worksheet, rowNumber, 8);
+  applyTemplateSheetDefaults(worksheet);
+  applyPageLayoutView(worksheet, 8, 'hours');
+}
+
+function addEventualitiesSheet(workbook, config) {
+  const worksheet = workbook.addWorksheet(normalizeWorksheetName(config.sheetName));
+  setColumns(worksheet, [34, 14, 15, 13, 14, 15, 14, 13, 14, 17, 17]);
+  const tableTitleRow = addEditableTextBox(workbook, worksheet, config.noteText, 11);
+  addTitleRow(worksheet, config.title, 11, tableTitleRow);
+
+  const headerRow = tableTitleRow + 1;
+  const subHeaderRow = tableTitleRow + 2;
+
+  addEventualitiesHeaderRows(worksheet, headerRow, subHeaderRow);
 
   let rowNumber = tableTitleRow + 3;
   let hasRows = false;
@@ -837,12 +926,30 @@ function addEventualitiesSheet(workbook, config) {
     totalTime: 0,
     generalTime: 0,
   };
+  const pagination = createContinuationManager({
+    worksheet,
+    title: config.title,
+    columnCount: 11,
+    rowLimit: PAGE_ROW_LIMITS.eventualities,
+    continuationHeaderRowCount: 2,
+    addContinuationHeader: (continuationHeaderRow) =>
+      addEventualitiesHeaderRows(worksheet, continuationHeaderRow, continuationHeaderRow + 1),
+  });
 
   groupBy(filteredEmployees, config.groupBy).forEach(([groupName, groupEmployees]) => {
+    rowNumber = pagination.beforeRows(rowNumber, Math.min(2, groupEmployees.length + 1));
     addGroupRow(worksheet, rowNumber, groupName, 11);
     rowNumber += 1;
+    pagination.addRows(1);
 
     groupEmployees.forEach((employee) => {
+      const nextRowNumber = pagination.beforeRows(rowNumber, 1);
+      if (nextRowNumber !== rowNumber) {
+        rowNumber = nextRowNumber;
+        addGroupRow(worksheet, rowNumber, groupName, 11);
+        rowNumber += 1;
+        pagination.addRows(1);
+      }
       const justifiedCount = employee.eventualidadesJustificadas;
       const justifiedTime = parseDuration(employee.tiempoEventualidadJustificada);
       const nonJustifiedEventTime =
@@ -888,15 +995,19 @@ function addEventualitiesSheet(workbook, config) {
       }
 
       rowNumber += 1;
+      pagination.addRows(1);
       hasRows = true;
     });
   });
 
   if (!hasRows) {
+    rowNumber = pagination.beforeRows(rowNumber, 1);
     addNoDataRow(worksheet, rowNumber, 11);
     rowNumber += 1;
+    pagination.addRows(1);
   }
 
+  rowNumber = pagination.beforeRows(rowNumber, 1);
   worksheet.getRow(rowNumber).values = [
     'TOTAL',
     totals.justifiedCount,
