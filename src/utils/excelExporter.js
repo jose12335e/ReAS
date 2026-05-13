@@ -29,6 +29,10 @@ const TEMPLATE_COLORS = {
 
 const TIME_FORMAT = '[h]:mm:ss';
 const PAPER_SIZE_LETTER = 1;
+const INSTITUTIONAL_HEADER =
+  '&R&"Aptos,Bold"&11&K00A9E0JCE-DGH-6064-2026\n' +
+  '&"Aptos,Bold"&11&K4B2A14REPORTE DE ASISTENCIA\n\n' +
+  '&"Aptos,Bold"&11&KD99A00DIRECCIÓN DE GESTIÓN HUMANA';
 const TABLE7_DISCIPLINARY_COLUMNS = {
   tardanzas: [4, 5],
   salidasTempranas: [6, 7],
@@ -118,7 +122,7 @@ function applyPageLayoutView(worksheet, columnCount, marginPreset = 'list') {
     margins: pageMarginsFromCentimeters(marginPreset),
   };
   worksheet.headerFooter = {
-    oddHeader: '',
+    oddHeader: INSTITUTIONAL_HEADER,
     oddFooter: '',
   };
 }
