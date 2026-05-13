@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import jceHeaderImage from '../assets/encabezadoJceBase64.js';
+import footerImage from '../assets/pieDePaginaBase64.js';
 import { buildReportWorkbookData } from './reportBuilder.js';
 import {
   buildEmployeeDisciplinarySummary,
@@ -36,6 +37,7 @@ const INSTITUTIONAL_HEADER =
   '&"Aptos,Bold"&11&K4B2A14REPORTE DE ASISTENCIA\n\n' +
   '&"Aptos,Bold"&11&KD99A00DIRECCIÓN DE GESTIÓN HUMANA';
 const INSTITUTIONAL_HEADER_IMAGE_BASE64 = jceHeaderImage.replace(/^data:image\/jpeg;base64,/, '');
+const INSTITUTIONAL_FOOTER_IMAGE_BASE64 = footerImage.replace(/^data:image\/png;base64,/, '');
 const TABLE7_DISCIPLINARY_COLUMNS = {
   tardanzas: [4, 5],
   salidasTempranas: [6, 7],
@@ -126,7 +128,7 @@ function applyPageLayoutView(worksheet, columnCount, marginPreset = 'list') {
   };
   worksheet.headerFooter = {
     oddHeader: INSTITUTIONAL_HEADER,
-    oddFooter: '',
+    oddFooter: '&L&G',
   };
 }
 
@@ -164,7 +166,7 @@ function ensureContentTypeDefault(contentTypesXml, extension, contentType) {
   );
 }
 
-function createHeaderImageVml(vmlRelId) {
+function createHeaderFooterImageVml({ headerRelId, footerRelId }) {
   return `<xml xmlns:v="urn:schemas-microsoft-com:vml"
  xmlns:o="urn:schemas-microsoft-com:office:office"
  xmlns:x="urn:schemas-microsoft-com:office:excel">
@@ -192,12 +194,17 @@ function createHeaderImageVml(vmlRelId) {
  </v:shapetype><v:shape id="LH" o:spid="_x0000_s1025" type="#_x0000_t75"
   style='position:absolute;margin-left:0;margin-top:0;width:528.5pt;height:78pt;
   z-index:1'>
-  <v:imagedata o:relid="${vmlRelId}" o:title="encabezado-jce"/>
+  <v:imagedata o:relid="${headerRelId}" o:title="encabezado-jce"/>
+  <o:lock v:ext="edit" rotation="t"/>
+ </v:shape><v:shape id="LF" o:spid="_x0000_s1026" type="#_x0000_t75"
+  style='position:absolute;margin-left:0;margin-top:0;width:528.5pt;height:105.2pt;
+  z-index:2'>
+  <v:imagedata o:relid="${footerRelId}" o:title="pie-de-pagina"/>
   <o:lock v:ext="edit" rotation="t"/>
  </v:shape></xml>`;
 }
 
-async function addInstitutionalHeaderImages(buffer) {
+async function addInstitutionalHeaderFooterImages(buffer) {
   const zip = await JSZip.loadAsync(buffer);
   const worksheetPaths = Object.keys(zip.files)
     .filter((path) => /^xl\/worksheets\/sheet\d+\.xml$/.test(path))
@@ -206,6 +213,7 @@ async function addInstitutionalHeaderImages(buffer) {
   const contentTypesPath = '[Content_Types].xml';
   let contentTypesXml = await zip.file(contentTypesPath).async('string');
   contentTypesXml = ensureContentTypeDefault(contentTypesXml, 'jpeg', 'image/jpeg');
+  contentTypesXml = ensureContentTypeDefault(contentTypesXml, 'png', 'image/png');
   contentTypesXml = ensureContentTypeDefault(
     contentTypesXml,
     'vml',
@@ -213,6 +221,7 @@ async function addInstitutionalHeaderImages(buffer) {
   );
   zip.file(contentTypesPath, contentTypesXml);
   zip.file('xl/media/encabezado-jce.jpeg', INSTITUTIONAL_HEADER_IMAGE_BASE64, { base64: true });
+  zip.file('xl/media/pie-de-pagina.png', INSTITUTIONAL_FOOTER_IMAGE_BASE64, { base64: true });
 
   let headerIndex = 1;
   for (const worksheetPath of worksheetPaths) {
@@ -236,12 +245,13 @@ async function addInstitutionalHeaderImages(buffer) {
     });
     zip.file(relsPath, relsXml);
 
-    zip.file(vmlPath, createHeaderImageVml('rId1'));
+    zip.file(vmlPath, createHeaderFooterImageVml({ headerRelId: 'rId1', footerRelId: 'rId2' }));
     zip.file(
       vmlRelsPath,
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
         '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/encabezado-jce.jpeg"/>' +
+        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/pie-de-pagina.png"/>' +
         '</Relationships>',
     );
 
@@ -968,7 +978,7 @@ export async function exportAttendanceReport(result) {
   addTemplateSheets(workbook, result);
 
   const buffer = await workbook.xlsx.writeBuffer();
-  return addInstitutionalHeaderImages(buffer);
+  return addInstitutionalHeaderFooterImages(buffer);
 }
 
 export function downloadArrayBuffer(buffer, filename) {
