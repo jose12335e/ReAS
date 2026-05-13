@@ -44,9 +44,18 @@ const TABLE7_DISCIPLINARY_COLUMNS = {
   ausencias: [8, 9],
 };
 const PAGE_ROW_LIMITS = {
-  list: 38,
-  hours: 34,
-  eventualities: 30,
+  list: {
+    first: 33,
+    continuation: 38,
+  },
+  hours: {
+    first: 20,
+    continuation: 21,
+  },
+  eventualities: {
+    first: 16,
+    continuation: 19,
+  },
 };
 
 const TABLE_MARGIN_PRESETS_CM = {
@@ -621,14 +630,20 @@ function createContinuationManager({
   continuationHeaderRowCount = 1,
 }) {
   let rowsOnPage = 0;
+  let isFirstPage = true;
+  const firstPageLimit = typeof rowLimit === 'number' ? rowLimit : rowLimit.first;
+  const continuationPageLimit =
+    typeof rowLimit === 'number' ? rowLimit : rowLimit.continuation ?? rowLimit.first;
 
   return {
     beforeRows(rowNumber, rowsNeeded = 1) {
-      if (rowsOnPage > 0 && rowsOnPage + rowsNeeded > rowLimit) {
+      const currentPageLimit = isFirstPage ? firstPageLimit : continuationPageLimit;
+      if (rowsOnPage > 0 && rowsOnPage + rowsNeeded > currentPageLimit) {
         worksheet.getRow(rowNumber - 1).addPageBreak();
         addContinuationTitleRow(worksheet, title, columnCount, rowNumber);
         addContinuationHeader(rowNumber + 1);
         rowsOnPage = 0;
+        isFirstPage = false;
         return rowNumber + 1 + continuationHeaderRowCount;
       }
       return rowNumber;
