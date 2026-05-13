@@ -197,7 +197,7 @@ function createHeaderFooterImageVml({ headerRelId, footerRelId }) {
   <v:imagedata o:relid="${headerRelId}" o:title="encabezado-jce"/>
   <o:lock v:ext="edit" rotation="t"/>
  </v:shape><v:shape id="LF" o:spid="_x0000_s1026" type="#_x0000_t75"
-  style='position:absolute;margin-left:0;margin-top:0;width:528.5pt;height:105.2pt;
+  style='position:absolute;margin-left:0;margin-top:0;width:306.43pt;height:60.94pt;
   z-index:2'>
   <v:imagedata o:relid="${footerRelId}" o:title="pie-de-pagina"/>
   <o:lock v:ext="edit" rotation="t"/>
