@@ -516,6 +516,19 @@ function groupBy(employees, getKey) {
   return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
 }
 
+function organizationGroup(employee) {
+  return employee.departamento || employee.ubicacion;
+}
+
+function sortEmployeesByPriority(employees, getPriority) {
+  return [...employees].sort((a, b) => {
+    const priorityA = Number(getPriority(a) || 0);
+    const priorityB = Number(getPriority(b) || 0);
+    if (priorityB !== priorityA) return priorityB - priorityA;
+    return collaboratorName(a).localeCompare(collaboratorName(b), 'es', { sensitivity: 'base' });
+  });
+}
+
 function parseDuration(value = '00:00') {
   const [hours = '0', minutes = '0', seconds = '0'] = String(value).split(':');
   const totalMinutes = Number(hours) * 60 + Number(minutes) + Number(seconds) / 60;
@@ -540,6 +553,25 @@ function hoursToExcelDuration(totalHours = 0) {
 function durationStringToExcelDuration(value) {
   if (typeof value !== 'string' || !/^\d+:\d{2}(:\d{2})?$/.test(value.trim())) return value;
   return minutesToExcelDuration(parseDuration(value));
+}
+
+function table6Priority(employee) {
+  const expected = Number(employee.horasEsperadas || 0);
+  const recognized = Number(employee.horasReconocidas ?? employee.horasTrabajadasReconocidas ?? 0);
+  const missingHours = Math.max(0, expected - recognized);
+  return missingHours * 100 + Number(employee.tasaAusentismo || 0);
+}
+
+function nonJustifiedEventMinutes(employee) {
+  return (
+    parseDuration(employee.tiempoTardanzaNoJustificada) +
+    parseDuration(employee.tiempoSalidaTempranaNoJustificada) +
+    parseDuration(employee.tiempoAusenciaNoJustificada)
+  );
+}
+
+function generalEventMinutes(employee) {
+  return parseDuration(employee.tiempoEventualidadJustificada) + nonJustifiedEventMinutes(employee);
 }
 
 function setDurationCell(cell, value) {
@@ -801,7 +833,7 @@ function addSimpleListSheet(workbook, config) {
   addSimpleListHeader(worksheet, headerRow, config.headers);
 
   let rowNumber = headerRow + 1;
-  const groups = groupBy(config.employees, (employee) => employee.ubicacion);
+  const groups = groupBy(config.employees, config.groupBy ?? organizationGroup);
   let hasRows = false;
   let totalQuantity = 0;
   const pagination = createContinuationManager({
@@ -814,7 +846,10 @@ function addSimpleListSheet(workbook, config) {
   });
 
   groups.forEach(([groupName, employees]) => {
-    const filtered = employees.filter(config.filter);
+    const filtered = sortEmployeesByPriority(
+      employees.filter(config.filter),
+      config.sortValue ?? config.quantity,
+    );
     if (!filtered.length) return;
     rowNumber = pagination.beforeRows(rowNumber, Math.min(2, filtered.length + 1));
     addGroupRow(worksheet, rowNumber, groupName, 3);
@@ -902,13 +937,14 @@ function addHoursVsWorkedSheet(workbook, employees) {
       addHoursVsWorkedHeader(worksheet, continuationHeaderRow, headers),
   });
 
-  groupBy(employees, (employee) => employee.ubicacion).forEach(([groupName, groupEmployees]) => {
+  groupBy(employees, organizationGroup).forEach(([groupName, groupEmployees]) => {
+    const sortedEmployees = sortEmployeesByPriority(groupEmployees, table6Priority);
     rowNumber = pagination.beforeRows(rowNumber, Math.min(2, groupEmployees.length + 1));
     addGroupRow(worksheet, rowNumber, groupName, 8);
     rowNumber += 1;
     pagination.addRows(1);
 
-    groupEmployees.forEach((employee) => {
+    sortedEmployees.forEach((employee) => {
       const nextRowNumber = pagination.beforeRows(rowNumber, 1);
       if (nextRowNumber !== rowNumber) {
         rowNumber = nextRowNumber;
@@ -1020,13 +1056,17 @@ function addEventualitiesSheet(workbook, config) {
       addEventualitiesHeaderRows(worksheet, continuationHeaderRow, continuationHeaderRow + 1),
   });
 
-  groupBy(filteredEmployees, config.groupBy).forEach(([groupName, groupEmployees]) => {
+  groupBy(filteredEmployees, config.groupBy ?? organizationGroup).forEach(([groupName, groupEmployees]) => {
+    const sortedEmployees = sortEmployeesByPriority(
+      groupEmployees,
+      config.sortValue ?? generalEventMinutes,
+    );
     rowNumber = pagination.beforeRows(rowNumber, Math.min(2, groupEmployees.length + 1));
     addGroupRow(worksheet, rowNumber, groupName, 11);
     rowNumber += 1;
     pagination.addRows(1);
 
-    groupEmployees.forEach((employee) => {
+    sortedEmployees.forEach((employee) => {
       const nextRowNumber = pagination.beforeRows(rowNumber, 1);
       if (nextRowNumber !== rowNumber) {
         rowNumber = nextRowNumber;
@@ -1036,10 +1076,7 @@ function addEventualitiesSheet(workbook, config) {
       }
       const justifiedCount = employee.eventualidadesJustificadas;
       const justifiedTime = parseDuration(employee.tiempoEventualidadJustificada);
-      const nonJustifiedEventTime =
-        parseDuration(employee.tiempoTardanzaNoJustificada) +
-        parseDuration(employee.tiempoSalidaTempranaNoJustificada) +
-        parseDuration(employee.tiempoAusenciaNoJustificada);
+      const nonJustifiedEventTime = nonJustifiedEventMinutes(employee);
       const generalAccumulatedTime = justifiedTime + nonJustifiedEventTime;
       totals.justifiedCount += Number(justifiedCount || 0);
       totals.justifiedTime += justifiedTime;
@@ -1148,7 +1185,7 @@ function addTemplateSheets(workbook, result) {
     title: 'Tabla 7. Eventualidades justificadas y no justificadas - Colaboradores/as',
     employees,
     filter: (employee) => !String(employee.tipoHorario).toLowerCase().includes('extendido'),
-    groupBy: (employee) => employee.ubicacion,
+    groupBy: organizationGroup,
     pagePreset: 'table7',
     applyFaultCategories: true,
     noteText:
@@ -1160,7 +1197,7 @@ function addTemplateSheets(workbook, result) {
     title: 'Tabla 8. Eventualidades justificadas y no justificadas - Horario extendido',
     employees,
     filter: (employee) => String(employee.tipoHorario).toLowerCase().includes('extendido'),
-    groupBy: (employee) => employee.departamento || employee.ubicacion,
+    groupBy: organizationGroup,
     pagePreset: 'table8',
     noteText:
       'La Tabla 8 consolida el registro de eventualidades justificadas y no justificadas del personal con horario extendido. Este cuadro es editable.',
