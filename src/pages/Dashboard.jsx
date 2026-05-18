@@ -43,11 +43,13 @@ export default function Dashboard() {
   const {
     defaultScheduleType,
     dghCode,
+    exportFilename,
     mapping,
     lastResult,
     lastSession,
     setDefaultScheduleType,
     setDghCode,
+    setExportFilename,
     setMapping,
     setLastResult,
     clearLastResult,
@@ -188,7 +190,7 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-[minmax(180px,230px)_minmax(230px,300px)_auto] sm:items-end">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(170px,220px)_minmax(220px,280px)_minmax(230px,300px)_auto] xl:items-end">
             <label className="grid gap-1.5">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Horario base
@@ -219,7 +221,27 @@ export default function Dashboard() {
                 onChange={(event) => setDghCode(event.target.value)}
               />
             </label>
-            <ExportButton result={result} disabled={isBusy} reportOptions={{ dghCode }} />
+            <label className="grid gap-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Nombre del Excel
+              </span>
+              <input
+                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                type="text"
+                value={exportFilename}
+                disabled={isBusy}
+                placeholder="reporte-asistencia"
+                onChange={(event) => setExportFilename(event.target.value)}
+              />
+            </label>
+            <div className="sm:col-span-2 xl:col-span-1">
+              <ExportButton
+                result={result}
+                disabled={isBusy}
+                reportOptions={{ dghCode }}
+                filename={exportFilename}
+              />
+            </div>
           </div>
         </header>
 

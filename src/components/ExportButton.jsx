@@ -2,7 +2,16 @@ import { Download, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { downloadArrayBuffer } from '../utils/excelExporter.js';
 
-export default function ExportButton({ result, disabled, reportOptions }) {
+function sanitizeWorkbookFilename(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/\.xlsx$/i, '')
+    .replace(/[. ]+$/g, '');
+}
+
+export default function ExportButton({ result, disabled, reportOptions, filename }) {
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState('');
 
@@ -36,7 +45,9 @@ export default function ExportButton({ result, disabled, reportOptions }) {
         worker.postMessage({ type: 'export', payload: { result, reportOptions } });
       });
       const date = new Date().toISOString().slice(0, 10);
-      downloadArrayBuffer(buffer, `reporte-asistencia-${date}.xlsx`);
+      const safeFilename = sanitizeWorkbookFilename(filename);
+      const downloadName = safeFilename || `reporte-asistencia-${date}`;
+      downloadArrayBuffer(buffer, `${downloadName}.xlsx`);
     } catch (exportError) {
       setError(exportError?.message || 'No se pudo exportar el reporte.');
     } finally {
