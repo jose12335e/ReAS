@@ -180,7 +180,7 @@ function finalizeMetricRow(row) {
     ...publicRow,
     diasATrabajar: Math.max(
       0,
-      row.diasLaborables - row.vacaciones - row.licencias - row.ponchesIrregulares,
+      row.diasLaborables - row.vacaciones - row.ponchesIrregulares,
     ),
     horasEsperadas: minutesToHours(horasEsperadasMin),
     horasTrabajadasReales: minutesToHours(horasTrabajadasRealesMin),
@@ -326,9 +326,12 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
     states.push('Vacacion justificada');
   } else if (isLicense && isWorkday) {
     metrics.licencias = 1;
+    metrics.horasEsperadasMin = expectedMinutes;
+    metrics.horasTrabajadasRealesMin = 0;
+    metrics.horasTrabajadasReconocidasMin = 0;
     metrics.eventualidadesJustificadas = 1;
-    metrics.tiempoEventualidadJustificadaMin += absenceEquivalentMinutes;
-    metrics.tiempoNoTrabajadoJustificadoMin += absenceEquivalentMinutes;
+    metrics.tiempoEventualidadJustificadaMin += expectedMinutes;
+    metrics.tiempoNoTrabajadoJustificadoMin += expectedMinutes;
     states.push('Licencia justificada');
   } else if (isIrregular && !overridesIrregularPunch) {
     metrics.ponchesIrregulares = 1;
