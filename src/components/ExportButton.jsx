@@ -2,7 +2,7 @@ import { Download, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { downloadArrayBuffer } from '../utils/excelExporter.js';
 
-export default function ExportButton({ result, disabled }) {
+export default function ExportButton({ result, disabled, reportOptions }) {
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState('');
 
@@ -33,7 +33,7 @@ export default function ExportButton({ result, disabled }) {
           reject(new Error(workerError.message || 'No se pudo generar el Excel.'));
         };
 
-        worker.postMessage({ type: 'export', payload: { result } });
+        worker.postMessage({ type: 'export', payload: { result, reportOptions } });
       });
       const date = new Date().toISOString().slice(0, 10);
       downloadArrayBuffer(buffer, `reporte-asistencia-${date}.xlsx`);

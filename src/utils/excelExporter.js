@@ -32,10 +32,7 @@ const TEMPLATE_COLORS = {
 
 const TIME_FORMAT = '[h]:mm:ss';
 const PAPER_SIZE_LETTER = 1;
-const INSTITUTIONAL_HEADER =
-  '&L&G&R&"Aptos,Bold"&11&K00A9E0JCE-DGH-6064-2026\n' +
-  '&"Aptos,Bold"&11&K4B2A14REPORTE DE ASISTENCIA\n\n' +
-  '&"Aptos,Bold"&11&KD99A00DIRECCIÓN DE GESTIÓN HUMANA';
+const DEFAULT_DGH_CODE = 'JCE-DGH-6064-2026';
 const INSTITUTIONAL_FOOTER =
   '&L&G&R&"Aptos,Regular"&10Av. Gregorio Luperón esq. Av. 27 de Febrero,\n' +
   'Plaza de la Bandera, Santo Domingo, D. N.\n' +
@@ -161,7 +158,17 @@ function columnLetter(columnNumber) {
   return letters;
 }
 
-function applyPageLayoutView(worksheet, columnCount, printPreset = 'table1') {
+function createInstitutionalHeader(reportCode = DEFAULT_DGH_CODE) {
+  const safeReportCode = String(reportCode || DEFAULT_DGH_CODE).trim() || DEFAULT_DGH_CODE;
+
+  return (
+    `&L&G&R&"Aptos,Bold"&11&K00A9E0${safeReportCode}\n` +
+    '&"Aptos,Bold"&11&K4B2A14REPORTE DE ASISTENCIA\n\n' +
+    '&"Aptos,Bold"&11&KD99A00DIRECCIÓN DE GESTIÓN HUMANA'
+  );
+}
+
+function applyPageLayoutView(worksheet, columnCount, printPreset = 'table1', reportOptions = {}) {
   const pageConfig = TABLE_PRINT_PRESETS[printPreset] ?? TABLE_PRINT_PRESETS.table1;
   const printRows = Math.max(worksheet.rowCount, pageConfig.minimumPrintRows ?? 0);
   worksheet.views = [
@@ -195,7 +202,7 @@ function applyPageLayoutView(worksheet, columnCount, printPreset = 'table1') {
     margins: pageMarginsFromCentimeters(pageConfig.marginPreset),
   };
   worksheet.headerFooter = {
-    oddHeader: INSTITUTIONAL_HEADER,
+    oddHeader: createInstitutionalHeader(reportOptions.dghCode),
     oddFooter: INSTITUTIONAL_FOOTER,
   };
 }
@@ -309,7 +316,7 @@ async function addInstitutionalHeaderFooterImages(buffer) {
   let headerIndex = 1;
   for (const worksheetPath of worksheetPaths) {
     let sheetXml = await zip.file(worksheetPath).async('string');
-    if (!sheetXml.includes('JCE-DGH-6064-2026') || !sheetXml.includes('&amp;L&amp;G')) {
+    if (!sheetXml.includes('REPORTE DE ASISTENCIA') || !sheetXml.includes('&amp;L&amp;G')) {
       continue;
     }
 
@@ -823,7 +830,7 @@ function applyTemplateSheetDefaults(worksheet) {
   });
 }
 
-function addSimpleListSheet(workbook, config) {
+function addSimpleListSheet(workbook, config, reportOptions = {}) {
   const worksheet = workbook.addWorksheet(normalizeWorksheetName(config.sheetName));
   setColumns(worksheet, config.widths);
   const tableTitleRow = addEditableTextBox(workbook, worksheet, config.noteText, 3);
@@ -887,10 +894,10 @@ function addSimpleListSheet(workbook, config) {
   worksheet.getRow(rowNumber).values = ['TOTAL', '', totalQuantity];
   styleTotalRow(worksheet, rowNumber, 3);
   applyTemplateSheetDefaults(worksheet);
-  applyPageLayoutView(worksheet, 3, config.pagePreset ?? 'table1');
+  applyPageLayoutView(worksheet, 3, config.pagePreset ?? 'table1', reportOptions);
 }
 
-function addHoursVsWorkedSheet(workbook, employees) {
+function addHoursVsWorkedSheet(workbook, employees, reportOptions = {}) {
   const worksheet = workbook.addWorksheet('Tabla 6 Horas y dias');
   setColumns(worksheet, [32, 14, 14, 16, 16, 16, 17, 16]);
   const tableTitleRow = addEditableTextBox(
@@ -1016,10 +1023,10 @@ function addHoursVsWorkedSheet(workbook, employees) {
   });
   styleTotalRow(worksheet, rowNumber, 8);
   applyTemplateSheetDefaults(worksheet);
-  applyPageLayoutView(worksheet, 8, 'table6');
+  applyPageLayoutView(worksheet, 8, 'table6', reportOptions);
 }
 
-function addEventualitiesSheet(workbook, config) {
+function addEventualitiesSheet(workbook, config, reportOptions = {}) {
   const worksheet = workbook.addWorksheet(normalizeWorksheetName(config.sheetName));
   setColumns(worksheet, [34, 14, 15, 13, 14, 15, 14, 13, 14, 17, 17]);
   const tableTitleRow = addEditableTextBox(workbook, worksheet, config.noteText, 11);
@@ -1148,70 +1155,86 @@ function addEventualitiesSheet(workbook, config) {
   styleTotalRow(worksheet, rowNumber, 11);
   if (config.applyFaultCategories) validateTable7FaultCoverage(worksheet, disciplinaryRows);
   applyTemplateSheetDefaults(worksheet);
-  applyPageLayoutView(worksheet, 11, config.pagePreset ?? 'table7');
+  applyPageLayoutView(worksheet, 11, config.pagePreset ?? 'table7', reportOptions);
 }
 
-function addTemplateSheets(workbook, result) {
+function addTemplateSheets(workbook, result, reportOptions = {}) {
   const employees = result.summaryByEmployee ?? [];
 
-  addSimpleListSheet(workbook, {
-    sheetName: 'Tabla 1 Vacaciones',
-    title: 'Tabla 1. Listado de vacaciones por colaborador/a',
-    headers: ['Nombres y Apellidos', 'Eventualidad', 'Cantidad'],
-    widths: [42, 22, 12],
-    pagePreset: 'table1',
-    employees,
-    filter: (employee) => employee.vacaciones > 0,
-    eventuality: () => 'Vacaciones',
-    quantity: (employee) => employee.vacaciones,
-  });
+  addSimpleListSheet(
+    workbook,
+    {
+      sheetName: 'Tabla 1 Vacaciones',
+      title: 'Tabla 1. Listado de vacaciones por colaborador/a',
+      headers: ['Nombres y Apellidos', 'Eventualidad', 'Cantidad'],
+      widths: [42, 22, 12],
+      pagePreset: 'table1',
+      employees,
+      filter: (employee) => employee.vacaciones > 0,
+      eventuality: () => 'Vacaciones',
+      quantity: (employee) => employee.vacaciones,
+    },
+    reportOptions,
+  );
 
-  addSimpleListSheet(workbook, {
-    sheetName: 'Tabla 2 Ponchado irregular',
-    title: 'Tabla 2. Listado de ponchado irregular por colaborador/a',
-    headers: ['Nombres y Apellidos', 'Modo dePonchado', 'Cantidad'],
-    widths: [42, 28, 12],
-    pagePreset: 'table2',
-    employees,
-    filter: (employee) => employee.ponchesIrregulares > 0,
-    eventuality: () => 'Ponche irregular',
-    quantity: (employee) => employee.ponchesIrregulares,
-  });
+  addSimpleListSheet(
+    workbook,
+    {
+      sheetName: 'Tabla 2 Ponchado irregular',
+      title: 'Tabla 2. Listado de ponchado irregular por colaborador/a',
+      headers: ['Nombres y Apellidos', 'Modo dePonchado', 'Cantidad'],
+      widths: [42, 28, 12],
+      pagePreset: 'table2',
+      employees,
+      filter: (employee) => employee.ponchesIrregulares > 0,
+      eventuality: () => 'Ponche irregular',
+      quantity: (employee) => employee.ponchesIrregulares,
+    },
+    reportOptions,
+  );
 
-  addHoursVsWorkedSheet(workbook, employees);
+  addHoursVsWorkedSheet(workbook, employees, reportOptions);
 
-  addEventualitiesSheet(workbook, {
-    sheetName: 'Tabla 7 Eventualidades',
-    title: 'Tabla 7. Eventualidades justificadas y no justificadas - Colaboradores/as',
-    employees,
-    filter: (employee) => !String(employee.tipoHorario).toLowerCase().includes('extendido'),
-    groupBy: organizationGroup,
-    pagePreset: 'table7',
-    applyFaultCategories: true,
-    noteText:
-      'La Tabla 7 consolida el registro de eventualidades justificadas (ausencias, permisos y licencias) y no justificadas (tardanzas, salidas anticipadas y ausencias). En el caso de las no justificadas, se incorpora una codificacion por colores que orienta sobre la posible medida disciplinaria conforme a la normativa vigente.\n\nNo obstante, su identificacion no implica la aplicacion automatica de sanciones, ya que corresponde al supervisor inmediato evaluar cada caso de manera individual y proceder segun los criterios establecidos en las Tablas 3, 4 y 5.',
-  });
+  addEventualitiesSheet(
+    workbook,
+    {
+      sheetName: 'Tabla 7 Eventualidades',
+      title: 'Tabla 7. Eventualidades justificadas y no justificadas - Colaboradores/as',
+      employees,
+      filter: (employee) => !String(employee.tipoHorario).toLowerCase().includes('extendido'),
+      groupBy: organizationGroup,
+      pagePreset: 'table7',
+      applyFaultCategories: true,
+      noteText:
+        'La Tabla 7 consolida el registro de eventualidades justificadas (ausencias, permisos y licencias) y no justificadas (tardanzas, salidas anticipadas y ausencias). En el caso de las no justificadas, se incorpora una codificacion por colores que orienta sobre la posible medida disciplinaria conforme a la normativa vigente.\n\nNo obstante, su identificacion no implica la aplicacion automatica de sanciones, ya que corresponde al supervisor inmediato evaluar cada caso de manera individual y proceder segun los criterios establecidos en las Tablas 3, 4 y 5.',
+    },
+    reportOptions,
+  );
 
-  addEventualitiesSheet(workbook, {
-    sheetName: 'Tabla 8 Eventualidades HE',
-    title: 'Tabla 8. Eventualidades justificadas y no justificadas - Horario extendido',
-    employees,
-    filter: (employee) => String(employee.tipoHorario).toLowerCase().includes('extendido'),
-    groupBy: organizationGroup,
-    pagePreset: 'table8',
-    noteText:
-      'La Tabla 8 consolida el registro de eventualidades justificadas y no justificadas del personal con horario extendido. Este cuadro es editable.',
-  });
+  addEventualitiesSheet(
+    workbook,
+    {
+      sheetName: 'Tabla 8 Eventualidades HE',
+      title: 'Tabla 8. Eventualidades justificadas y no justificadas - Horario extendido',
+      employees,
+      filter: (employee) => String(employee.tipoHorario).toLowerCase().includes('extendido'),
+      groupBy: organizationGroup,
+      pagePreset: 'table8',
+      noteText:
+        'La Tabla 8 consolida el registro de eventualidades justificadas y no justificadas del personal con horario extendido. Este cuadro es editable.',
+    },
+    reportOptions,
+  );
 }
 
-export async function exportAttendanceReport(result) {
+export async function exportAttendanceReport(result, reportOptions = {}) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'ReAS';
   workbook.created = new Date();
 
   const reportData = buildReportWorkbookData(result);
   reportData.sheets.forEach((sheet) => addRowsToWorksheet(workbook, sheet.name, sheet.rows));
-  addTemplateSheets(workbook, result);
+  addTemplateSheets(workbook, result, reportOptions);
 
   const buffer = await workbook.xlsx.writeBuffer();
   return addInstitutionalHeaderFooterImages(buffer);

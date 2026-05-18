@@ -2,14 +2,18 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { DEFAULT_SCHEDULE_TYPE } from '../config/scheduleConfig.js';
 
+const DEFAULT_DGH_CODE = 'JCE-DGH-6064-2026';
+
 export const useAttendanceStore = create(
   persist(
     (set) => ({
       defaultScheduleType: DEFAULT_SCHEDULE_TYPE,
+      dghCode: DEFAULT_DGH_CODE,
       mapping: {},
       lastResult: null,
       lastSession: null,
       setDefaultScheduleType: (defaultScheduleType) => set({ defaultScheduleType }),
+      setDghCode: (dghCode) => set({ dghCode }),
       setMapping: (mapping) => set({ mapping }),
       setLastResult: (lastResult) =>
         set({
@@ -27,13 +31,15 @@ export const useAttendanceStore = create(
     }),
     {
       name: 'reas-attendance-config',
-      version: 2,
+      version: 3,
       migrate: (persistedState) => ({
         ...persistedState,
+        dghCode: persistedState?.dghCode || DEFAULT_DGH_CODE,
         lastResult: null,
       }),
       partialize: (state) => ({
         defaultScheduleType: state.defaultScheduleType,
+        dghCode: state.dghCode,
         mapping: state.mapping,
         lastSession: state.lastSession,
       }),

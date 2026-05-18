@@ -42,10 +42,12 @@ export default function Dashboard() {
 
   const {
     defaultScheduleType,
+    dghCode,
     mapping,
     lastResult,
     lastSession,
     setDefaultScheduleType,
+    setDghCode,
     setMapping,
     setLastResult,
     clearLastResult,
@@ -186,7 +188,7 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="grid gap-3 sm:grid-cols-[minmax(180px,230px)_minmax(230px,300px)_auto] sm:items-end">
             <label className="grid gap-1.5">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Horario base
@@ -204,7 +206,20 @@ export default function Dashboard() {
                 ))}
               </select>
             </label>
-            <ExportButton result={result} disabled={isBusy} />
+            <label className="grid gap-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                No. DGH del reporte
+              </span>
+              <input
+                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                type="text"
+                value={dghCode}
+                disabled={isBusy}
+                placeholder="JCE-DGH-6064-2026"
+                onChange={(event) => setDghCode(event.target.value)}
+              />
+            </label>
+            <ExportButton result={result} disabled={isBusy} reportOptions={{ dghCode }} />
           </div>
         </header>
 

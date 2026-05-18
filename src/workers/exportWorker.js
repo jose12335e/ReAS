@@ -20,7 +20,7 @@ self.onmessage = async (event) => {
   if (type !== 'export') return;
 
   try {
-    const buffer = await exportAttendanceReport(payload.result);
+    const buffer = await exportAttendanceReport(payload.result, payload.reportOptions);
     const transferableBuffer = await toTransferableArrayBuffer(buffer);
     post('export:success', { buffer: transferableBuffer }, [transferableBuffer]);
   } catch (error) {
