@@ -106,6 +106,12 @@ const TABLE_PRINT_PRESETS = {
     orientation: 'portrait',
     scale: 98,
   },
+  table3: {
+    marginPreset: 'list',
+    orientation: 'portrait',
+    scale: 90,
+    minimumPrintRows: 42,
+  },
   table6: {
     marginPreset: 'hours',
     orientation: 'portrait',
@@ -897,6 +903,183 @@ function addSimpleListSheet(workbook, config, reportOptions = {}) {
   applyPageLayoutView(worksheet, 3, config.pagePreset ?? 'table1', reportOptions);
 }
 
+const DISCIPLINARY_REFERENCE_INTRO =
+  'Para la evaluación de las tardanzas, salidas tempranas y ausencias, se tomó en cuenta lo establecido en el Manual de Inducción Institucional y en el Reglamento que Rige la Relación Laboral de Funcionarios y Empleados de la JCE. Con base en estos lineamientos, se elaboró una tabla de escalas (ver Tablas 3 a 5) que clasifica cada tipo de eventualidad según su gravedad y la sanción correspondiente. Esta estructura permite ofrecer una valoración visual, rápida y precisa del nivel de cumplimiento de cada colaborador/a durante el período evaluado.';
+
+const DISCIPLINARY_REFERENCE_TABLES = [
+  {
+    title: 'Tabla 3. Categoría de las ausencias.',
+    category: 'Ausencias',
+    rows: [
+      {
+        label: 'Falta de 3er grado:',
+        fill: TEMPLATE_COLORS.faultRed,
+        fontColor: TEMPLATE_COLORS.white,
+        infraction:
+          'Dejar de asistir durante 3 días laborables consecutivos o en un mismo mes sin causas justificadas.',
+        sanction: 'Cada caso será evaluado por la DGH.',
+      },
+      {
+        label: 'Falta de 2do grado:',
+        fill: TEMPLATE_COLORS.faultOrange,
+        fontColor: TEMPLATE_COLORS.white,
+        infraction: 'Reincidir en la falta de primer grado.',
+        sanction: 'Cada caso será evaluado por la DGH.',
+      },
+      {
+        label: 'Falta de 1er grado:',
+        fill: TEMPLATE_COLORS.faultYellow,
+        fontColor: TEMPLATE_COLORS.black,
+        infraction: 'Dejar de asistir un día sin aprobación previa o causa justificada.',
+        sanction: 'El supervisor inmediato podrá aplicarle una amonestación escrita.',
+      },
+      {
+        label: 'Sin falta',
+        fill: TEMPLATE_COLORS.faultGreen,
+        fontColor: TEMPLATE_COLORS.black,
+        infraction: 'Sin registro de ausencia durante el mes.',
+        sanction: '',
+      },
+    ],
+  },
+  {
+    title: 'Tabla 4. Categorías de las tardanzas.',
+    category: 'Tardanzas',
+    rows: [
+      {
+        label: 'Falta de 3er grado:',
+        fill: TEMPLATE_COLORS.faultRed,
+        fontColor: TEMPLATE_COLORS.white,
+        infraction: 'Acumular en el mes 421 o más: 7 horas y 1 minuto o más.',
+        sanction: 'Cada caso será evaluado por la DGH.',
+      },
+      {
+        label: 'Falta de 2do grado:',
+        fill: TEMPLATE_COLORS.faultOrange,
+        fontColor: TEMPLATE_COLORS.white,
+        infraction: 'Acumular en el mes 321 a 420 minutos: 5 horas y 1 minuto a 7 horas.',
+        sanction: 'Cada caso será evaluado por la DGH.',
+      },
+      {
+        label: 'Falta de 1er grado:',
+        fill: TEMPLATE_COLORS.faultYellow,
+        fontColor: TEMPLATE_COLORS.black,
+        infraction: 'Acumular en el mes 220 a 320 minutos: 2 horas y 1 minuto a 5 horas.',
+        sanction: 'El supervisor inmediato podrá aplicarle una amonestación escrita.',
+      },
+      {
+        label: 'Sin falta',
+        fill: TEMPLATE_COLORS.faultGreen,
+        fontColor: TEMPLATE_COLORS.black,
+        infraction: 'Acumular en el mes 0 a 219 minutos: 0 minutos a 2 horas.',
+        sanction: '',
+      },
+    ],
+  },
+  {
+    title: 'Tabla 5. Categorías de las salidas tempranas.',
+    category: 'Salidas Tempranas',
+    rows: [
+      {
+        label: 'Falta de 3er grado:',
+        fill: TEMPLATE_COLORS.faultRed,
+        fontColor: TEMPLATE_COLORS.white,
+        infraction: 'Acumular en el mes 421 o más: 7 horas y 1 minuto o más.',
+        sanction: 'Cada caso será evaluado por la DGH.',
+      },
+      {
+        label: 'Falta de 2do grado:',
+        fill: TEMPLATE_COLORS.faultOrange,
+        fontColor: TEMPLATE_COLORS.white,
+        infraction: 'Acumular en el mes 321 a 420 minutos: 5 horas y 1 minuto a 7 horas.',
+        sanction: 'Cada caso será evaluado por la DGH.',
+      },
+      {
+        label: 'Falta de 1er grado:',
+        fill: TEMPLATE_COLORS.faultYellow,
+        fontColor: TEMPLATE_COLORS.black,
+        infraction: 'Acumular en el mes 220 a 320 minutos: 2 horas y 1 minuto a 5 horas.',
+        sanction: 'El supervisor inmediato podrá aplicarle una amonestación escrita.',
+      },
+      {
+        label: 'Sin falta',
+        fill: TEMPLATE_COLORS.faultGreen,
+        fontColor: TEMPLATE_COLORS.black,
+        infraction: 'Acumular en el mes 0 a 219 minutos: 0 minutos a 2 horas.',
+        sanction: '',
+      },
+    ],
+  },
+];
+
+function styleDisciplinaryReferenceTable(worksheet, startRow, table) {
+  addTitleRow(worksheet, table.title, 3, startRow);
+
+  worksheet.mergeCells(startRow + 1, 1, startRow + 1, 3);
+  const categoryCell = worksheet.getCell(startRow + 1, 1);
+  categoryCell.value = table.category;
+  categoryCell.font = { name: 'Aptos', size: 10, bold: true };
+  categoryCell.alignment = { vertical: 'middle', horizontal: 'center' };
+  fillCell(categoryCell, TEMPLATE_COLORS.gold);
+  styleRowCells(worksheet, startRow + 1, 1, 3, {
+    fill: TEMPLATE_COLORS.gold,
+    font: { name: 'Aptos', size: 10, bold: true },
+  });
+
+  worksheet.getRow(startRow + 2).values = ['Color', 'Infracción', 'Sanciones'];
+  styleRowCells(worksheet, startRow + 2, 1, 3, {
+    fill: TEMPLATE_COLORS.black,
+    font: { name: 'Aptos', size: 10, bold: true, color: { argb: TEMPLATE_COLORS.white } },
+  });
+
+  table.rows.forEach((row, index) => {
+    const rowNumber = startRow + 3 + index;
+    worksheet.getRow(rowNumber).values = [row.label, row.infraction, row.sanction];
+    styleRowCells(worksheet, rowNumber, 1, 3, { horizontal: 'left' });
+    const colorCell = worksheet.getCell(rowNumber, 1);
+    fillCell(colorCell, row.fill);
+    colorCell.font = {
+      name: 'Aptos',
+      size: 10,
+      bold: true,
+      color: { argb: row.fontColor },
+    };
+    colorCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    worksheet.getRow(rowNumber).height = row.sanction ? 34 : 24;
+  });
+
+  return startRow + 8;
+}
+
+function addDisciplinaryReferenceSheet(workbook, reportOptions = {}) {
+  const worksheet = workbook.addWorksheet('Tabla 3-5 Reglas');
+  setColumns(worksheet, [22, 74, 38]);
+
+  worksheet.mergeCells(1, 1, 4, 3);
+  const introCell = worksheet.getCell(1, 1);
+  introCell.value = DISCIPLINARY_REFERENCE_INTRO;
+  introCell.font = { name: 'Aptos', size: 10 };
+  introCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  fillCell(introCell, 'FFF2EAD1');
+  introCell.border = {
+    top: { style: 'medium', color: { argb: 'FFD9A300' } },
+    bottom: { style: 'medium', color: { argb: 'FFD9A300' } },
+    left: { style: 'medium', color: { argb: 'FFD9A300' } },
+    right: { style: 'medium', color: { argb: 'FFD9A300' } },
+  };
+  [1, 2, 3, 4].forEach((rowNumber) => {
+    worksheet.getRow(rowNumber).height = 26;
+  });
+
+  let rowNumber = 6;
+  DISCIPLINARY_REFERENCE_TABLES.forEach((table) => {
+    rowNumber = styleDisciplinaryReferenceTable(worksheet, rowNumber, table);
+  });
+
+  applyTemplateSheetDefaults(worksheet);
+  applyPageLayoutView(worksheet, 3, 'table3', reportOptions);
+}
+
 function addHoursVsWorkedSheet(workbook, employees, reportOptions = {}) {
   const worksheet = workbook.addWorksheet('Tabla 6 Horas y dias');
   setColumns(worksheet, [32, 14, 14, 16, 16, 16, 17, 16]);
@@ -1192,6 +1375,8 @@ function addTemplateSheets(workbook, result, reportOptions = {}) {
     },
     reportOptions,
   );
+
+  addDisciplinaryReferenceSheet(workbook, reportOptions);
 
   addHoursVsWorkedSheet(workbook, employees, reportOptions);
 
