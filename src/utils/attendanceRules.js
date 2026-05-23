@@ -80,6 +80,12 @@ function clean(value) {
   return String(value ?? '').trim();
 }
 
+function findPayrollRecord(payrollEmployeesByCode, code) {
+  if (!payrollEmployeesByCode || !code) return null;
+  const codeKeys = getEmployeeCodeKeys(code);
+  return codeKeys.map((key) => payrollEmployeesByCode[key]).find(Boolean) ?? null;
+}
+
 function detectScheduleType(row, mapping, defaultScheduleType, extendedEmployeeCodes) {
   const codeKeys = getEmployeeCodeKeys(asValue(row, mapping, 'codigo'));
   const raw = clean(asValue(row, mapping, 'tipoHorario')).toLowerCase();
@@ -89,13 +95,16 @@ function detectScheduleType(row, mapping, defaultScheduleType, extendedEmployeeC
   return defaultScheduleType || DEFAULT_SCHEDULE_TYPE;
 }
 
-function createEmployeeRecord({ codigo, nombre, ubicacion, departamento, scheduleType }) {
+function createEmployeeRecord({ codigo, nombre, ubicacion, departamento, cargo, cedula, fechaIngreso, scheduleType }) {
   const schedule = getScheduleDefinition(scheduleType);
   return {
     codigo,
     nombre,
     ubicacion,
     departamento,
+    cargo,
+    cedula,
+    fechaIngreso,
     tipoHorario: schedule.label,
     scheduleType,
     ...createEmptyMetrics(),
@@ -221,6 +230,9 @@ function buildProcessedOutput(row, metrics) {
     CODIGO: row.codigo,
     UBICACION: row.ubicacion,
     DEPARTAMENTO: row.departamento,
+    CARGO: row.cargo,
+    CEDULA: row.cedula,
+    'Fecha ingreso': row.fechaIngreso,
     FECHA: row.fecha,
     DIA: row.dia,
     'Tipo horario': row.tipoHorario,
@@ -485,10 +497,12 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
 
 export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
   const extendedEmployeeCodes = new Set(options.extendedEmployeeCodes ?? []);
+  const payrollEmployeesByCode = options.payrollEmployeesByCode ?? {};
   const employees = new Map();
   const locations = new Map();
   const schedules = new Map();
   const processedRows = [];
+  let excludedRowsByPayroll = 0;
   const events = {
     tardanzas: [],
     salidasTempranas: [],
@@ -499,12 +513,61 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
   };
 
   rows.forEach((rawRow, index) => {
+    const rawCode = clean(asValue(rawRow, mapping, 'codigo'));
+    const payrollRecord = findPayrollRecord(payrollEmployeesByCode, rawCode);
+    if (payrollRecord?.excluded) {
+      excludedRowsByPayroll += 1;
+      processedRows.push({
+        '#': index + 1,
+        NOMBRE: payrollRecord.nombre || clean(asValue(rawRow, mapping, 'nombre')),
+        CODIGO: rawCode,
+        UBICACION: payrollRecord.ubicacion || clean(asValue(rawRow, mapping, 'ubicacion')) || 'Sin ubicacion',
+        DEPARTAMENTO: payrollRecord.ubicacion || '',
+        CARGO: payrollRecord.cargo || '',
+        CEDULA: payrollRecord.cedula || '',
+        'Fecha ingreso': payrollRecord.fechaIngreso || '',
+        FECHA: clean(asValue(rawRow, mapping, 'fecha')),
+        DIA: clean(asValue(rawRow, mapping, 'dia')),
+        'Tipo horario': '',
+        'Hora entrada': clean(asValue(rawRow, mapping, 'entrada')),
+        'Hora salida': clean(asValue(rawRow, mapping, 'salida')),
+        'Horas esperadas': 0,
+        'Horas trabajadas reales': 0,
+        'Horas trabajadas reconocidas': 0,
+        'Tiempo tardanza': '00:00',
+        'Tiempo salida temprana': '00:00',
+        'Tiempo no trabajado justificado': '00:00',
+        'Tiempo no trabajado no justificado': '00:00',
+        'Tasa ausentismo': 0,
+        'Ver viatico': 0,
+        'Observación original': clean(asValue(rawRow, mapping, 'observaciones')),
+        'Observación procesada': payrollRecord.exclusionReason,
+        'Estado final': `Excluido de cálculos - ${payrollRecord.exclusionReason}`,
+      });
+      return;
+    }
+
     const result = evaluateAttendanceRow(rawRow, mapping, {
       ...options,
       extendedEmployeeCodes,
     });
     const { row, metrics, processedRow } = result;
     if (!row.codigo && !row.nombre) return;
+
+    if (payrollRecord) {
+      row.nombre = payrollRecord.nombre || row.nombre;
+      row.ubicacion = payrollRecord.ubicacion || row.ubicacion;
+      row.departamento = payrollRecord.ubicacion || row.departamento;
+      row.cargo = payrollRecord.cargo || '';
+      row.cedula = payrollRecord.cedula || '';
+      row.fechaIngreso = payrollRecord.fechaIngreso || '';
+      processedRow.NOMBRE = row.nombre;
+      processedRow.UBICACION = row.ubicacion;
+      processedRow.DEPARTAMENTO = row.departamento;
+      processedRow.CARGO = row.cargo;
+      processedRow.CEDULA = row.cedula;
+      processedRow['Fecha ingreso'] = row.fechaIngreso;
+    }
 
     const employeeKey = `${row.ubicacion}::${row.codigo}::${row.nombre}`;
     if (!employees.has(employeeKey)) {
@@ -578,6 +641,7 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
     metadata: {
       totalRows: rows.length,
       processedRows: processedRows.length,
+      excludedRowsByPayroll,
       generatedAt: new Date().toISOString(),
     },
   };

@@ -3,8 +3,10 @@ import { FileSpreadsheet, Files, Upload } from 'lucide-react';
 export default function UploadExcel({
   primaryFile,
   secondaryFiles,
+  payrollFile,
   onPrimaryFile,
   onSecondaryFiles,
+  onPayrollFile,
   disabled,
 }) {
   return (
@@ -16,12 +18,12 @@ export default function UploadExcel({
             <h2 className="text-base font-semibold">Carga de archivos</h2>
           </div>
           <p className="mt-1 text-sm text-slate-600">
-            Sube el archivo principal de asistencia y el libro con empleados de horario extendido.
+            Sube el archivo principal de asistencia, horario extendido y nómina para cruzar datos por código.
           </p>
         </div>
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+      <div className="mt-5 grid gap-4 lg:grid-cols-3">
         <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-teal-300 bg-teal-50/60 px-4 py-6 text-center transition hover:border-teal-500 hover:bg-teal-50">
           <Upload className="h-8 w-8 text-teal-700" />
           <span className="mt-3 text-sm font-semibold text-slate-900">Excel principal</span>
@@ -52,6 +54,23 @@ export default function UploadExcel({
             multiple
             disabled={disabled}
             onChange={(event) => onSecondaryFiles(Array.from(event.target.files ?? []))}
+          />
+        </label>
+
+        <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-amber-300 bg-amber-50/60 px-4 py-6 text-center transition hover:border-amber-500 hover:bg-amber-50">
+          <FileSpreadsheet className="h-8 w-8 text-amber-700" />
+          <span className="mt-3 text-sm font-semibold text-slate-900">Excel nómina</span>
+          <span className="mt-1 max-w-sm text-xs text-slate-600">
+            {payrollFile
+              ? payrollFile.name
+              : 'Cruza por CODIGO: cargo, ubicación y fecha de ingreso'}
+          </span>
+          <input
+            className="sr-only"
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            disabled={disabled}
+            onChange={(event) => onPayrollFile(event.target.files?.[0] ?? null)}
           />
         </label>
       </div>

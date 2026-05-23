@@ -32,6 +32,7 @@ export default function Dashboard() {
   const workerRef = useRef(null);
   const [primaryFile, setPrimaryFile] = useState(null);
   const [secondaryFiles, setSecondaryFiles] = useState([]);
+  const [payrollFile, setPayrollFile] = useState(null);
   const [preview, setPreview] = useState({ headers: [], previewRows: [], rows: [] });
   const [result, setResult] = useState(null);
   const [errors, setErrors] = useState([]);
@@ -153,7 +154,16 @@ export default function Dashboard() {
           arrayBuffer: await file.arrayBuffer(),
         })),
       );
-      const transferList = extendedScheduleFiles.map((file) => file.arrayBuffer);
+      const payrollPayload = payrollFile
+        ? {
+            name: payrollFile.name,
+            arrayBuffer: await payrollFile.arrayBuffer(),
+          }
+        : null;
+      const transferList = [
+        ...extendedScheduleFiles.map((file) => file.arrayBuffer),
+        ...(payrollPayload ? [payrollPayload.arrayBuffer] : []),
+      ];
 
       workerRef.current?.postMessage(
         {
@@ -162,6 +172,7 @@ export default function Dashboard() {
             mapping,
             defaultScheduleType,
             extendedScheduleFiles,
+            payrollFile: payrollPayload,
           },
         },
         transferList,
@@ -248,9 +259,11 @@ export default function Dashboard() {
         <UploadExcel
           primaryFile={primaryFile}
           secondaryFiles={secondaryFiles}
+          payrollFile={payrollFile}
           disabled={isBusy}
           onPrimaryFile={handlePrimaryFile}
           onSecondaryFiles={setSecondaryFiles}
+          onPayrollFile={setPayrollFile}
         />
 
         <ProgressBar progress={progress} status={status} />
@@ -284,11 +297,27 @@ export default function Dashboard() {
                 {file.fileName}: hoja "{file.sheetName}", columna "{file.codeHeader ?? 'no detectada'}".
               </div>
             ))}
-            {result.metadata.warnings?.map((warning) => (
-              <div key={warning} className="mt-1 text-amber-800">
-                {warning}
-              </div>
+          </div>
+        ) : null}
+
+        {result?.metadata?.warnings?.length ? (
+          <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+            {result.metadata.warnings.map((warning) => (
+              <div key={warning}>{warning}</div>
             ))}
+          </div>
+        ) : null}
+
+        {result?.metadata?.payroll?.fileName ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            <div className="font-semibold">
+              Nómina cruzada por CODIGO: {result.metadata.payroll.employeesDetected} empleado(s)
+              detectado(s)
+            </div>
+            <div className="mt-1">
+              {result.metadata.payroll.fileName}: hoja "{result.metadata.payroll.sheetName}",{' '}
+              {result.metadata.excludedRowsByPayroll ?? 0} fila(s) excluida(s) de cálculos.
+            </div>
           </div>
         ) : null}
 

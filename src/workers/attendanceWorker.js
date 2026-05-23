@@ -1,6 +1,7 @@
 import { parseExcelArrayBuffer } from '../utils/excelReader.js';
 import { processAttendanceRows } from '../utils/attendanceRules.js';
 import { parseExtendedScheduleFiles } from '../utils/extendedScheduleReader.js';
+import { parsePayrollWorkbook } from '../utils/payrollReader.js';
 import { validateColumnMapping } from '../utils/validationRules.js';
 
 let cachedRows = [];
@@ -48,10 +49,17 @@ self.onmessage = async (event) => {
         rows,
         payload.mapping,
       );
-      post('progress', { value: 34, label: 'Aplicando reglas de asistencia' });
+      post('progress', { value: 34, label: 'Cruzando datos de nómina' });
+      const payroll = parsePayrollWorkbook(
+        payload.payrollFile?.arrayBuffer,
+        payload.payrollFile?.name,
+        extendedSchedule.evaluationMonth,
+      );
+      post('progress', { value: 42, label: 'Aplicando reglas de asistencia' });
       const result = processAttendanceRows(rows, payload.mapping, {
         defaultScheduleType: payload.defaultScheduleType,
         extendedEmployeeCodes: extendedSchedule.extendedEmployeeCodes,
+        payrollEmployeesByCode: payroll.employeesByCode,
       });
       post('progress', { value: 78, label: 'Construyendo resúmenes' });
       post('progress', { value: 100, label: 'Procesamiento completado' });
@@ -62,7 +70,14 @@ self.onmessage = async (event) => {
           headers: cachedHeaders,
           sheetName: cachedSheetName,
           extendedSchedule,
-          warnings: extendedSchedule.warnings,
+          payroll: {
+            fileName: payroll.fileName,
+            sheetName: payroll.sheetName,
+            rowCount: payroll.rowCount,
+            employeesDetected: payroll.employeesDetected,
+            mapping: payroll.mapping,
+          },
+          warnings: [...extendedSchedule.warnings, ...payroll.warnings],
         },
       });
       return;
