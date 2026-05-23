@@ -82,6 +82,44 @@ export function detectEvaluationMonth(rows = [], mapping = {}) {
   };
 }
 
+export function detectAvailableMonths(rows = [], mapping = {}) {
+  const monthCounts = new Map();
+
+  rows.forEach((row) => {
+    const value = row?.[mapping.fecha];
+    const parsedDate = parseDateValue(value);
+    if (!parsedDate) return;
+
+    const year = parsedDate.getFullYear();
+    const month = parsedDate.getMonth();
+    const key = `${year}-${month}`;
+    const current = monthCounts.get(key) ?? {
+      key,
+      year,
+      month,
+      label: `${MONTHS[month].names[0]} ${year}`,
+      rowCount: 0,
+    };
+    current.rowCount += 1;
+    monthCounts.set(key, current);
+  });
+
+  return Array.from(monthCounts.values()).sort((a, b) => a.year - b.year || a.month - b.month);
+}
+
+export function filterRowsByEvaluationMonth(rows = [], mapping = {}, evaluationMonth = null) {
+  if (!evaluationMonth) return rows;
+
+  return rows.filter((row) => {
+    const parsedDate = parseDateValue(row?.[mapping.fecha]);
+    return (
+      parsedDate &&
+      parsedDate.getFullYear() === Number(evaluationMonth.year) &&
+      parsedDate.getMonth() === Number(evaluationMonth.month)
+    );
+  });
+}
+
 function scoreSheetName(sheetName, evaluationMonth) {
   if (!evaluationMonth) return 0;
 
@@ -156,8 +194,8 @@ export function parseExtendedScheduleWorkbook(arrayBuffer, fileName, evaluationM
   };
 }
 
-export function parseExtendedScheduleFiles(files = [], rows = [], mapping = {}) {
-  const evaluationMonth = detectEvaluationMonth(rows, mapping);
+export function parseExtendedScheduleFiles(files = [], rows = [], mapping = {}, evaluationMonthOverride = null) {
+  const evaluationMonth = evaluationMonthOverride ?? detectEvaluationMonth(rows, mapping);
   const extendedEmployeeCodes = new Set();
   const filesMetadata = [];
   const warnings = [];

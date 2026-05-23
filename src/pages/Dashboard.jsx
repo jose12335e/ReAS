@@ -33,7 +33,8 @@ export default function Dashboard() {
   const [primaryFile, setPrimaryFile] = useState(null);
   const [secondaryFiles, setSecondaryFiles] = useState([]);
   const [payrollFile, setPayrollFile] = useState(null);
-  const [preview, setPreview] = useState({ headers: [], previewRows: [], rows: [] });
+  const [preview, setPreview] = useState({ headers: [], previewRows: [], rows: [], availableMonths: [] });
+  const [selectedMonth, setSelectedMonth] = useState(null);
   const [result, setResult] = useState(null);
   const [errors, setErrors] = useState([]);
   const [progress, setProgress] = useState(0);
@@ -74,6 +75,7 @@ export default function Dashboard() {
 
       if (type === 'preview:success') {
         setPreview(payload);
+        setSelectedMonth(payload.selectedMonth ?? payload.availableMonths?.[0] ?? null);
         setMapping(payload.mapping);
         setResult(null);
         setRestoredFromStorage(false);
@@ -81,6 +83,17 @@ export default function Dashboard() {
         setErrors(payload.validation?.errors ?? []);
         setIsBusy(false);
         setStatus('');
+      }
+
+      if (type === 'months:success') {
+        setPreview((current) => ({
+          ...current,
+          availableMonths: payload.availableMonths ?? [],
+        }));
+        setSelectedMonth((current) => {
+          if ((payload.availableMonths ?? []).some((month) => month.key === current?.key)) return current;
+          return payload.selectedMonth ?? payload.availableMonths?.[0] ?? null;
+        });
       }
 
       if (type === 'process:success') {
@@ -120,6 +133,11 @@ export default function Dashboard() {
       setRestoredFromStorage(true);
     }
   }, [lastResult, result]);
+
+  useEffect(() => {
+    if (!preview.headers.length || !mapping.fecha || !workerRef.current) return;
+    workerRef.current.postMessage({ type: 'months', payload: { mapping } });
+  }, [mapping, preview.headers.length]);
 
   async function handlePrimaryFile(file) {
     if (!file) return;
@@ -173,6 +191,7 @@ export default function Dashboard() {
             defaultScheduleType,
             extendedScheduleFiles,
             payrollFile: payrollPayload,
+            selectedMonth,
           },
         },
         transferList,
@@ -267,6 +286,33 @@ export default function Dashboard() {
         />
 
         <ProgressBar progress={progress} status={status} />
+
+        {preview.availableMonths?.length ? (
+          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <label className="grid gap-1.5 sm:max-w-xs">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Mes a calcular
+              </span>
+              <select
+                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                value={selectedMonth?.key ?? ''}
+                disabled={isBusy}
+                onChange={(event) => {
+                  const month = preview.availableMonths.find((option) => option.key === event.target.value);
+                  setSelectedMonth(month ?? null);
+                  setResult(null);
+                  clearLastResult();
+                }}
+              >
+                {preview.availableMonths.map((month) => (
+                  <option key={month.key} value={month.key}>
+                    {month.label} ({month.rowCount.toLocaleString()} fila(s))
+                  </option>
+                ))}
+              </select>
+            </label>
+          </section>
+        ) : null}
 
         {errors.length ? (
           <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">

@@ -1,6 +1,10 @@
 import { parseExcelArrayBuffer } from '../utils/excelReader.js';
 import { processAttendanceRows } from '../utils/attendanceRules.js';
-import { parseExtendedScheduleFiles } from '../utils/extendedScheduleReader.js';
+import {
+  detectAvailableMonths,
+  filterRowsByEvaluationMonth,
+  parseExtendedScheduleFiles,
+} from '../utils/extendedScheduleReader.js';
 import { parsePayrollWorkbook } from '../utils/payrollReader.js';
 import { validateColumnMapping } from '../utils/validationRules.js';
 
@@ -29,8 +33,22 @@ self.onmessage = async (event) => {
       cachedRows = parsed.rows;
       cachedHeaders = parsed.headers;
       cachedSheetName = parsed.sheetName;
+      const availableMonths = detectAvailableMonths(parsed.rows, parsed.mapping);
       post('progress', { value: 100, label: 'Vista previa lista' });
-      post('preview:success', parsed);
+      post('preview:success', {
+        ...parsed,
+        availableMonths,
+        selectedMonth: availableMonths[0] ?? null,
+      });
+      return;
+    }
+
+    if (type === 'months') {
+      const availableMonths = detectAvailableMonths(cachedRows, payload.mapping);
+      post('months:success', {
+        availableMonths,
+        selectedMonth: availableMonths[0] ?? null,
+      });
       return;
     }
 
@@ -41,13 +59,15 @@ self.onmessage = async (event) => {
         return;
       }
 
-      const rows = payload.rows || cachedRows;
+      const selectedMonth = payload.selectedMonth ?? null;
+      const rows = filterRowsByEvaluationMonth(payload.rows || cachedRows, payload.mapping, selectedMonth);
       post('progress', { value: 18, label: 'Validando columnas y filas' });
       post('progress', { value: 28, label: 'Detectando empleados con horario extendido' });
       const extendedSchedule = parseExtendedScheduleFiles(
         payload.extendedScheduleFiles ?? [],
         rows,
         payload.mapping,
+        selectedMonth,
       );
       post('progress', { value: 34, label: 'Cruzando datos de nómina' });
       const payroll = parsePayrollWorkbook(
@@ -69,6 +89,8 @@ self.onmessage = async (event) => {
           ...result.metadata,
           headers: cachedHeaders,
           sheetName: cachedSheetName,
+          availableMonths: detectAvailableMonths(cachedRows, payload.mapping),
+          selectedMonth: selectedMonth ?? extendedSchedule.evaluationMonth,
           extendedSchedule,
           payroll: {
             fileName: payroll.fileName,
