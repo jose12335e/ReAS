@@ -4,7 +4,7 @@ import { parseDateValue } from './timeUtils.js';
 
 const HEADER_ALIASES = {
   code: ['CODIGO', 'CODIGO EMPLEADO', 'CODIGO DE EMPLEADO', 'COD EMPLEADO', 'COD', 'ID EMPLEADO'],
-  name: ['NOMBRE', 'NOMBRES', 'NOMBRE Y APELLIDO', 'NOMBRES Y APELLIDOS', 'EMPLEADO'],
+  name: ['NOMBRE', 'NOMBRES', 'NOMBRE COMPLETO', 'NOMBRE Y APELLIDO', 'NOMBRES Y APELLIDOS'],
   documentId: ['CEDULA', 'CÉDULA', 'DOCUMENTO', 'NO CEDULA', 'CEDULA IDENTIDAD'],
   position: ['CARGO', 'PUESTO', 'POSICION', 'POSICIÓN', 'FUNCION', 'FUNCIÓN'],
   hierarchyPosition: ['POSICION', 'POSICIÓN'],
@@ -21,19 +21,51 @@ function normalizeHeader(value = '') {
     .trim();
 }
 
-function findHeader(headers, aliases) {
+function isCodeLikeHeader(header) {
+  const normalized = normalizeHeader(header);
+  return /\b(CODIGO|COD|ID|CEDULA|DOCUMENTO)\b/.test(normalized);
+}
+
+function isNameLikeHeader(header) {
+  const normalized = normalizeHeader(header);
+  return /\b(NOMBRE|NOMBRES|APELLIDO|APELLIDOS)\b/.test(normalized) && !isCodeLikeHeader(header);
+}
+
+function isHierarchyPositionHeader(header) {
+  return /^POSICION\b/.test(normalizeHeader(header));
+}
+
+function findHeader(headers, aliases, field) {
+  if (field === 'name') {
+    const nameHeader = headers.find(isNameLikeHeader);
+    if (nameHeader) return nameHeader;
+  }
+
   const aliasSet = new Set(aliases.map(normalizeHeader));
-  const exact = headers.find((header) => aliasSet.has(normalizeHeader(header)));
+  const exact = headers.find((header) => {
+    if (field === 'name' && isCodeLikeHeader(header)) return false;
+    if (field === 'position' && isHierarchyPositionHeader(header)) return false;
+    return aliasSet.has(normalizeHeader(header));
+  });
   if (exact) return exact;
 
-  return headers.find((header) => aliases.some((alias) => normalizeHeader(header).includes(normalizeHeader(alias)))) ?? null;
+  return (
+    headers.find((header) => {
+      if (field === 'name' && !isNameLikeHeader(header)) return false;
+      if (field === 'position' && isHierarchyPositionHeader(header)) return false;
+      return aliases.some((alias) => normalizeHeader(header).includes(normalizeHeader(alias)));
+    }) ?? null
+  );
 }
 
 function inferPayrollMapping(rows = []) {
   const headers = rows.length ? Object.keys(rows[0]) : [];
 
   return Object.fromEntries(
-    Object.entries(HEADER_ALIASES).map(([field, aliases]) => [field, findHeader(headers, aliases)]),
+    Object.entries(HEADER_ALIASES).map(([field, aliases]) => [
+      field,
+      findHeader(headers, aliases, field),
+    ]),
   );
 }
 
