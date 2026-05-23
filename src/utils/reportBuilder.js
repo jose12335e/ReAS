@@ -10,6 +10,7 @@ function pickEmployeeExportRow(row) {
     DEPARTAMENTO: row.departamento,
     CEDULA: row.cedula,
     CARGO: row.cargo,
+    POSICION: row.posicion,
     'Fecha ingreso': row.fechaIngreso,
     'Tipo horario': row.tipoHorario,
     'Días laborables': row.diasLaborables,

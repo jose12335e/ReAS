@@ -95,7 +95,17 @@ function detectScheduleType(row, mapping, defaultScheduleType, extendedEmployeeC
   return defaultScheduleType || DEFAULT_SCHEDULE_TYPE;
 }
 
-function createEmployeeRecord({ codigo, nombre, ubicacion, departamento, cargo, cedula, fechaIngreso, scheduleType }) {
+function createEmployeeRecord({
+  codigo,
+  nombre,
+  ubicacion,
+  departamento,
+  cargo,
+  posicion,
+  cedula,
+  fechaIngreso,
+  scheduleType,
+}) {
   const schedule = getScheduleDefinition(scheduleType);
   return {
     codigo,
@@ -103,6 +113,7 @@ function createEmployeeRecord({ codigo, nombre, ubicacion, departamento, cargo, 
     ubicacion,
     departamento,
     cargo,
+    posicion,
     cedula,
     fechaIngreso,
     tipoHorario: schedule.label,
@@ -231,6 +242,7 @@ function buildProcessedOutput(row, metrics) {
     UBICACION: row.ubicacion,
     DEPARTAMENTO: row.departamento,
     CARGO: row.cargo,
+    POSICION: row.posicion,
     CEDULA: row.cedula,
     'Fecha ingreso': row.fechaIngreso,
     FECHA: row.fecha,
@@ -524,6 +536,7 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
         UBICACION: payrollRecord.ubicacion || clean(asValue(rawRow, mapping, 'ubicacion')) || 'Sin ubicacion',
         DEPARTAMENTO: payrollRecord.ubicacion || '',
         CARGO: payrollRecord.cargo || '',
+        POSICION: payrollRecord.posicion || '',
         CEDULA: payrollRecord.cedula || '',
         'Fecha ingreso': payrollRecord.fechaIngreso || '',
         FECHA: clean(asValue(rawRow, mapping, 'fecha')),
@@ -559,12 +572,14 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
       row.ubicacion = payrollRecord.ubicacion || row.ubicacion;
       row.departamento = payrollRecord.ubicacion || row.departamento;
       row.cargo = payrollRecord.cargo || '';
+      row.posicion = payrollRecord.posicion || '';
       row.cedula = payrollRecord.cedula || '';
       row.fechaIngreso = payrollRecord.fechaIngreso || '';
       processedRow.NOMBRE = row.nombre;
       processedRow.UBICACION = row.ubicacion;
       processedRow.DEPARTAMENTO = row.departamento;
       processedRow.CARGO = row.cargo;
+      processedRow.POSICION = row.posicion;
       processedRow.CEDULA = row.cedula;
       processedRow['Fecha ingreso'] = row.fechaIngreso;
     }

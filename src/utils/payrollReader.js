@@ -7,6 +7,7 @@ const HEADER_ALIASES = {
   name: ['NOMBRE', 'NOMBRES', 'NOMBRE Y APELLIDO', 'NOMBRES Y APELLIDOS', 'EMPLEADO'],
   documentId: ['CEDULA', 'CÉDULA', 'DOCUMENTO', 'NO CEDULA', 'CEDULA IDENTIDAD'],
   position: ['CARGO', 'PUESTO', 'POSICION', 'POSICIÓN', 'FUNCION', 'FUNCIÓN'],
+  hierarchyPosition: ['POSICION', 'POSICIÓN'],
   location: ['UBICACION', 'UBICACIÓN', 'DEPARTAMENTO', 'AREA', 'ÁREA', 'DIRECCION', 'DIRECCIÓN'],
   hireDate: ['FECHA DE INGRESO', 'FECHA INGRESO', 'INGRESO', 'FECHA INICIO', 'FECHA DE ENTRADA'],
 };
@@ -72,9 +73,13 @@ function normalizePosition(value = '') {
     .toUpperCase();
 }
 
-function isExcludedPosition(position) {
+function isExcludedPosition(position, hierarchyPosition = '') {
   const normalized = normalizePosition(position);
-  return /\b(SUB\s*DIRECTOR|SUBDIRECTOR|DIRECTOR|DIRECTORA)\b/.test(normalized);
+  const normalizedHierarchyPosition = normalizePosition(hierarchyPosition);
+  return (
+    /\b(SUB\s*DIRECTOR|SUBDIRECTOR|DIRECTOR|DIRECTORA)\b/.test(normalized) ||
+    /\bDIRECCION\s+V\b/.test(normalizedHierarchyPosition)
+  );
 }
 
 function isAfterEvaluationPeriod(hireDate, evaluationMonth) {
@@ -110,18 +115,20 @@ export function parsePayrollWorkbook(arrayBuffer, fileName, evaluationMonth) {
 
     const hireDate = parseDateValue(row?.[mapping.hireDate]);
     const position = clean(row?.[mapping.position]);
-    const excludedByPosition = isExcludedPosition(position);
+    const hierarchyPosition = clean(row?.[mapping.hierarchyPosition]);
+    const excludedByPosition = isExcludedPosition(position, hierarchyPosition);
     const excludedByHireDate = isAfterEvaluationPeriod(hireDate, evaluationMonth);
     const record = {
       codigo: clean(row?.[mapping.code]),
       nombre: clean(row?.[mapping.name]),
       cedula: clean(row?.[mapping.documentId]),
       cargo: position,
+      posicion: hierarchyPosition,
       ubicacion: clean(row?.[mapping.location]),
       fechaIngreso: hireDate ? hireDate.toISOString().slice(0, 10) : clean(row?.[mapping.hireDate]),
       excluded: excludedByPosition || excludedByHireDate,
       exclusionReason: [
-        excludedByPosition ? 'Cargo excluido por nómina' : '',
+        excludedByPosition ? 'Cargo/posición excluida por nómina' : '',
         excludedByHireDate ? 'Ingreso posterior al período evaluado' : '',
       ]
         .filter(Boolean)
