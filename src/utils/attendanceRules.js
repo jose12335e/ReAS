@@ -90,6 +90,7 @@ function detectScheduleType(row, mapping, defaultScheduleType, extendedEmployeeC
   const codeKeys = getEmployeeCodeKeys(asValue(row, mapping, 'codigo'));
   const raw = clean(asValue(row, mapping, 'tipoHorario')).toLowerCase();
   if (raw.includes('extend')) return SCHEDULE_TYPES.EXTENDED;
+  if (raw.includes('modif')) return SCHEDULE_TYPES.MODIFIED;
   if (raw.includes('normal')) return SCHEDULE_TYPES.NORMAL;
   if (codeKeys.some((code) => extendedEmployeeCodes?.has(code))) return SCHEDULE_TYPES.EXTENDED;
   return defaultScheduleType || DEFAULT_SCHEDULE_TYPE;
@@ -105,8 +106,9 @@ function createEmployeeRecord({
   cedula,
   fechaIngreso,
   scheduleType,
+  modifiedSchedule,
 }) {
-  const schedule = getScheduleDefinition(scheduleType);
+  const schedule = getScheduleDefinition(scheduleType, modifiedSchedule);
   return {
     codigo,
     nombre,
@@ -136,7 +138,8 @@ function addEvent(events, type, row) {
   events[type].push(row);
 }
 
-function getAbsenceEquivalentMinutes(scheduleType) {
+function getAbsenceEquivalentMinutes(scheduleType, expectedMinutes) {
+  if (scheduleType === SCHEDULE_TYPES.MODIFIED) return expectedMinutes;
   return scheduleType === SCHEDULE_TYPES.EXTENDED ? 11 * 60 : 8 * 60;
 }
 
@@ -277,18 +280,19 @@ function buildProcessedOutput(row, metrics) {
 
 export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
   const defaultScheduleType = options.defaultScheduleType || DEFAULT_SCHEDULE_TYPE;
+  const modifiedSchedule = options.modifiedSchedule;
   const scheduleType = detectScheduleType(
     rawRow,
     mapping,
     defaultScheduleType,
     options.extendedEmployeeCodes,
   );
-  const schedule = getScheduleDefinition(scheduleType);
+  const schedule = getScheduleDefinition(scheduleType, modifiedSchedule);
   const dayIndex = getDayIndex({
     dayName: asValue(rawRow, mapping, 'dia'),
     dateValue: asValue(rawRow, mapping, 'fecha'),
   });
-  const expectedWindow = getExpectedWindow(scheduleType, dayIndex);
+  const expectedWindow = getExpectedWindow(scheduleType, dayIndex, modifiedSchedule);
   const entryExpected = parseClockToMinutes(expectedWindow.entry ?? schedule.defaultEntry);
   const exitExpected = parseClockToMinutes(expectedWindow.exit);
   const entryMinutes = parseClockToMinutes(asValue(rawRow, mapping, 'entrada'));
@@ -299,7 +303,7 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
   const hasVerViatico = observation.matches.some((match) => match.id === 'ver-viatico');
   const isHoliday = observation.matches.some((match) => match.id === 'feriado');
   const expectedMinutes = expectedWindow.expectedMinutes;
-  const absenceEquivalentMinutes = getAbsenceEquivalentMinutes(scheduleType);
+  const absenceEquivalentMinutes = getAbsenceEquivalentMinutes(scheduleType, expectedMinutes);
   const isWorkday = expectedWindow.isWorkday && !isHoliday;
   const isAbsent = isWorkday && entryMinutes === null && exitMinutes === null;
   const isIrregular =
@@ -586,7 +590,10 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
 
     const employeeKey = `${row.ubicacion}::${row.codigo}::${row.nombre}`;
     if (!employees.has(employeeKey)) {
-      employees.set(employeeKey, createEmployeeRecord(row));
+      employees.set(employeeKey, createEmployeeRecord({
+        ...row,
+        modifiedSchedule: options.modifiedSchedule,
+      }));
     }
 
     const employee = employees.get(employeeKey);

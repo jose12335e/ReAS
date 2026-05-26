@@ -3,9 +3,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import ColumnMapper from '../components/ColumnMapper.jsx';
 import DataPreview from '../components/DataPreview.jsx';
 import ExportButton from '../components/ExportButton.jsx';
+import ModifiedScheduleEditor from '../components/ModifiedScheduleEditor.jsx';
 import SummaryCards from '../components/SummaryCards.jsx';
 import UploadExcel from '../components/UploadExcel.jsx';
-import { scheduleConfig } from '../config/scheduleConfig.js';
+import { scheduleConfig, SCHEDULE_TYPES } from '../config/scheduleConfig.js';
 import { useAttendanceStore } from '../store/attendanceStore.js';
 import { validateColumnMapping } from '../utils/validationRules.js';
 
@@ -44,12 +45,14 @@ export default function Dashboard() {
 
   const {
     defaultScheduleType,
+    modifiedSchedule,
     dghCode,
     exportFilename,
     mapping,
     lastResult,
     lastSession,
     setDefaultScheduleType,
+    setModifiedSchedule,
     setDghCode,
     setExportFilename,
     setMapping,
@@ -189,6 +192,7 @@ export default function Dashboard() {
           payload: {
             mapping,
             defaultScheduleType,
+            modifiedSchedule,
             extendedScheduleFiles,
             payrollFile: payrollPayload,
             selectedMonth,
@@ -229,7 +233,11 @@ export default function Dashboard() {
                 className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
                 value={defaultScheduleType}
                 disabled={isBusy}
-                onChange={(event) => setDefaultScheduleType(event.target.value)}
+                onChange={(event) => {
+                  setDefaultScheduleType(event.target.value);
+                  setResult(null);
+                  clearLastResult();
+                }}
               >
                 {Object.values(scheduleConfig).map((schedule) => (
                   <option key={schedule.id} value={schedule.id}>
@@ -274,6 +282,18 @@ export default function Dashboard() {
             </div>
           </div>
         </header>
+
+        {defaultScheduleType === SCHEDULE_TYPES.MODIFIED ? (
+          <ModifiedScheduleEditor
+            value={modifiedSchedule}
+            disabled={isBusy}
+            onChange={(nextSchedule) => {
+              setModifiedSchedule(nextSchedule);
+              setResult(null);
+              clearLastResult();
+            }}
+          />
+        ) : null}
 
         <UploadExcel
           primaryFile={primaryFile}

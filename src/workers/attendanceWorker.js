@@ -78,6 +78,7 @@ self.onmessage = async (event) => {
       post('progress', { value: 42, label: 'Aplicando reglas de asistencia' });
       const result = processAttendanceRows(rows, payload.mapping, {
         defaultScheduleType: payload.defaultScheduleType,
+        modifiedSchedule: payload.modifiedSchedule,
         extendedEmployeeCodes: extendedSchedule.extendedEmployeeCodes,
         payrollEmployeesByCode: payroll.employeesByCode,
       });
