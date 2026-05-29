@@ -1,4 +1,5 @@
-import { ClipboardList } from 'lucide-react';
+import { Check, ClipboardList, Copy } from 'lucide-react';
+import { useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -66,16 +67,45 @@ function SummaryLine({ label, value }) {
   );
 }
 
-function SummaryBlock({ title, children }) {
+function blockToText(title, lines) {
+  return [
+    title,
+    ...lines.map((line) => `- ${line.label}: ${line.value}`),
+  ].join('\n');
+}
+
+function SummaryBlock({ title, lines, onCopy, copied }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 className="text-base font-semibold text-slate-950">{title}</h3>
-      <ul className="mt-3 space-y-2">{children}</ul>
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="text-base font-semibold text-slate-950">{title}</h3>
+        <button
+          className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-md border px-3 text-xs font-semibold transition ${
+            copied
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700'
+          }`}
+          type="button"
+          title="Copiar este cuadro"
+          aria-label={`Copiar ${title}`}
+          onClick={() => onCopy(title, lines)}
+        >
+          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? 'Copiado' : 'Copiar'}
+        </button>
+      </div>
+      <ul className="mt-3 space-y-2">
+        {lines.map((line) => (
+          <SummaryLine key={line.label} label={line.label} value={line.value} />
+        ))}
+      </ul>
     </div>
   );
 }
 
 export default function SummaryCards({ result }) {
+  const [copiedBlock, setCopiedBlock] = useState('');
+
   if (!result) return null;
 
   const summary = result.summaryGeneral;
@@ -103,6 +133,80 @@ export default function SummaryCards({ result }) {
     ...item,
     counts: buildDisciplinaryCounts(result.summaryByEmployee, item.key),
   }));
+  const summaryBlocks = [
+    {
+      id: 'tiempo-dias',
+      title: 'Tiempo y días a trabajar vs tiempo y días trabajado',
+      lines: [
+        { label: 'Días a trabajar', value: formatNumber(summary.diasATrabajar) },
+        { label: 'Días trabajados', value: formatNumber(summary.diasTrabajadosCompletos) },
+        { label: 'Representando un cumplimiento de', value: formatPercent(diasCumplimiento) },
+        { label: 'Horas a trabajar', value: hoursToDuration(summary.horasEsperadas) },
+        { label: 'Horas trabajadas', value: hoursToDuration(summary.horasReconocidas) },
+        { label: 'Representando un cumplimiento de', value: formatPercent(horasCumplimiento) },
+        { label: 'Tasa de ausentismo', value: formatPercent(summary.tasaAusentismo) },
+      ],
+    },
+    {
+      id: 'tiempo-general',
+      title: 'Tiempo general acumulado en eventualidades',
+      lines: [
+        {
+          label: 'Tiempo acumulado de eventualidades justificadas y no justificadas',
+          value: minutesToDuration(tiempoGeneralEventualidadesMin),
+        },
+        { label: 'Ver viático', value: formatNumber(summary.verViatico) },
+        { label: 'Ponches irregulares', value: formatNumber(summary.ponchesIrregulares) },
+      ],
+    },
+    {
+      id: 'justificadas',
+      title: 'Eventualidades justificadas registradas',
+      lines: [
+        { label: 'Eventualidades justificadas', value: formatNumber(summary.eventualidadesJustificadas) },
+        { label: 'Tiempo acumulado', value: durationToDisplay(summary.tiempoEventualidadJustificada) },
+      ],
+    },
+    {
+      id: 'no-justificadas',
+      title: 'Eventualidades no justificadas registradas',
+      lines: [
+        { label: 'Tardanzas', value: formatNumber(summary.tardanzasNoJustificadas) },
+        { label: 'Tiempo de tardanza acumulado', value: durationToDisplay(summary.tiempoTardanzaNoJustificada) },
+        { label: 'Salidas tempranas', value: formatNumber(summary.salidasTempranasNoJustificadas) },
+        {
+          label: 'Tiempo de salidas tempranas acumulado',
+          value: durationToDisplay(summary.tiempoSalidaTempranaNoJustificada),
+        },
+        { label: 'Ausencias', value: formatNumber(summary.ausenciasNoJustificadas) },
+        { label: 'Tiempo de ausencias acumulado', value: durationToDisplay(summary.tiempoAusenciaNoJustificada) },
+        { label: 'Tiempo total no justificado', value: minutesToDuration(tiempoEventualidadesNoJustificadasMin) },
+      ],
+    },
+  ];
+
+  async function handleCopyBlock(title, lines) {
+    const text = blockToText(title, lines);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopiedBlock(title);
+      window.setTimeout(() => setCopiedBlock(''), 1600);
+    } catch {
+      setCopiedBlock('');
+    }
+  }
 
   return (
     <section className="space-y-5">
@@ -118,57 +222,15 @@ export default function SummaryCards({ result }) {
         </div>
 
         <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
-          <SummaryBlock title="Tiempo y días a trabajar vs tiempo y días trabajado">
-            <SummaryLine label="Días a trabajar" value={formatNumber(summary.diasATrabajar)} />
-            <SummaryLine label="Días trabajados" value={formatNumber(summary.diasTrabajadosCompletos)} />
-            <SummaryLine label="Representando un cumplimiento de" value={formatPercent(diasCumplimiento)} />
-            <SummaryLine label="Horas a trabajar" value={hoursToDuration(summary.horasEsperadas)} />
-            <SummaryLine label="Horas trabajadas" value={hoursToDuration(summary.horasReconocidas)} />
-            <SummaryLine label="Representando un cumplimiento de" value={formatPercent(horasCumplimiento)} />
-            <SummaryLine label="Tasa de ausentismo" value={formatPercent(summary.tasaAusentismo)} />
-          </SummaryBlock>
-
-          <SummaryBlock title="Tiempo general acumulado en eventualidades">
-            <SummaryLine
-              label="Tiempo acumulado de eventualidades justificadas y no justificadas"
-              value={minutesToDuration(tiempoGeneralEventualidadesMin)}
+          {summaryBlocks.map((block) => (
+            <SummaryBlock
+              key={block.id}
+              title={block.title}
+              lines={block.lines}
+              copied={copiedBlock === block.title}
+              onCopy={handleCopyBlock}
             />
-            <SummaryLine label="Ver viático" value={formatNumber(summary.verViatico)} />
-            <SummaryLine label="Ponches irregulares" value={formatNumber(summary.ponchesIrregulares)} />
-          </SummaryBlock>
-
-          <SummaryBlock title="Eventualidades justificadas registradas">
-            <SummaryLine
-              label="Eventualidades justificadas"
-              value={formatNumber(summary.eventualidadesJustificadas)}
-            />
-            <SummaryLine
-              label="Tiempo acumulado"
-              value={durationToDisplay(summary.tiempoEventualidadJustificada)}
-            />
-          </SummaryBlock>
-
-          <SummaryBlock title="Eventualidades no justificadas registradas">
-            <SummaryLine label="Tardanzas" value={formatNumber(summary.tardanzasNoJustificadas)} />
-            <SummaryLine
-              label="Tiempo de tardanza acumulado"
-              value={durationToDisplay(summary.tiempoTardanzaNoJustificada)}
-            />
-            <SummaryLine label="Salidas tempranas" value={formatNumber(summary.salidasTempranasNoJustificadas)} />
-            <SummaryLine
-              label="Tiempo de salidas tempranas acumulado"
-              value={durationToDisplay(summary.tiempoSalidaTempranaNoJustificada)}
-            />
-            <SummaryLine label="Ausencias" value={formatNumber(summary.ausenciasNoJustificadas)} />
-            <SummaryLine
-              label="Tiempo de ausencias acumulado"
-              value={durationToDisplay(summary.tiempoAusenciaNoJustificada)}
-            />
-            <SummaryLine
-              label="Tiempo total no justificado"
-              value={minutesToDuration(tiempoEventualidadesNoJustificadasMin)}
-            />
-          </SummaryBlock>
+          ))}
         </div>
       </div>
 
