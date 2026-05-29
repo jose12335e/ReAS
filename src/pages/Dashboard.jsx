@@ -1,8 +1,18 @@
-import { CalendarDays, FileCheck2, Loader2, Play, ShieldCheck } from 'lucide-react';
+import {
+  AlertTriangle,
+  CalendarDays,
+  ClipboardList,
+  FileCheck2,
+  Loader2,
+  Play,
+  ShieldCheck,
+  UploadCloud,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import AuditReviewPanel from '../components/AuditReviewPanel.jsx';
 import ColumnMapper from '../components/ColumnMapper.jsx';
 import DataPreview from '../components/DataPreview.jsx';
+import EmployeeAlerts from '../components/EmployeeAlerts.jsx';
 import ExportButton from '../components/ExportButton.jsx';
 import ModifiedScheduleEditor from '../components/ModifiedScheduleEditor.jsx';
 import SummaryCards from '../components/SummaryCards.jsx';
@@ -33,6 +43,33 @@ function ProgressBar({ progress, status }) {
   );
 }
 
+function TabButton({ icon: Icon, label, description, active, disabled, onClick }) {
+  return (
+    <button
+      className={`flex min-h-20 items-center gap-3 rounded-lg border p-3 text-left shadow-sm transition ${
+        active
+          ? 'border-teal-200 bg-white text-slate-950 shadow-slate-200/70 ring-2 ring-teal-100'
+          : 'border-slate-200 bg-white/75 text-slate-600 hover:border-slate-300 hover:bg-white'
+      } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <span
+        className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg ${
+          active ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-500'
+        }`}
+      >
+        <Icon className="h-5 w-5" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold">{label}</span>
+        <span className="mt-0.5 block text-xs text-slate-500">{description}</span>
+      </span>
+    </button>
+  );
+}
+
 export default function Dashboard() {
   const workerRef = useRef(null);
   const [primaryFile, setPrimaryFile] = useState(null);
@@ -46,6 +83,7 @@ export default function Dashboard() {
   const [status, setStatus] = useState('');
   const [isBusy, setIsBusy] = useState(false);
   const [restoredFromStorage, setRestoredFromStorage] = useState(false);
+  const [activeTab, setActiveTab] = useState('processing');
 
   const {
     defaultScheduleType,
@@ -82,6 +120,7 @@ export default function Dashboard() {
 
       if (type === 'preview:success') {
         setPreview(payload);
+        setActiveTab('processing');
         setSelectedMonth(payload.selectedMonth ?? payload.availableMonths?.[0] ?? null);
         setMapping(payload.mapping);
         setResult(null);
@@ -105,6 +144,7 @@ export default function Dashboard() {
 
       if (type === 'process:success') {
         setResult(payload);
+        setActiveTab('summary');
         setRestoredFromStorage(false);
         setErrors([]);
         setIsBusy(false);
@@ -140,6 +180,12 @@ export default function Dashboard() {
       setRestoredFromStorage(true);
     }
   }, [lastResult, result]);
+
+  useEffect(() => {
+    if (!result && activeTab !== 'processing') {
+      setActiveTab('processing');
+    }
+  }, [activeTab, result]);
 
   useEffect(() => {
     if (!preview.headers.length || !mapping.fecha || !workerRef.current) return;
@@ -225,6 +271,28 @@ export default function Dashboard() {
   }
 
   const hasPendingAudit = Boolean(result?.audit?.hasDiscrepancies);
+  const tabs = [
+    {
+      id: 'processing',
+      label: 'Procesamiento',
+      description: 'Carga, mes, mapeo y cálculo',
+      icon: UploadCloud,
+    },
+    {
+      id: 'summary',
+      label: 'Resumen',
+      description: 'Reporte, auditoría y descarga',
+      icon: ClipboardList,
+      disabled: !result,
+    },
+    {
+      id: 'alerts',
+      label: 'Alertas',
+      description: 'Casos críticos por área',
+      icon: AlertTriangle,
+      disabled: !result,
+    },
+  ];
 
   return (
     <main className="min-h-screen bg-[#eef3f7]">
@@ -262,7 +330,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="grid w-full gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 xl:w-[680px]">
+            <div className="grid w-full gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3 xl:w-[680px]">
               <label className="grid gap-1.5">
                 <span className="text-xs font-semibold uppercase text-slate-500">
                   Horario base
@@ -310,172 +378,195 @@ export default function Dashboard() {
                   onChange={(event) => setExportFilename(event.target.value)}
                 />
               </label>
-              <div className="grid content-end">
-                <ExportButton
-                  result={result}
-                  disabled={isBusy || hasPendingAudit}
-                  reportOptions={{ dghCode }}
-                  filename={exportFilename}
-                />
-              </div>
             </div>
           </div>
         </header>
 
-        {defaultScheduleType === SCHEDULE_TYPES.MODIFIED ? (
-          <ModifiedScheduleEditor
-            value={modifiedSchedule}
-            disabled={isBusy}
-            onChange={(nextSchedule) => {
-              setModifiedSchedule(nextSchedule);
-              setResult(null);
-              clearLastResult();
-            }}
-          />
-        ) : null}
+        <nav className="grid gap-3 md:grid-cols-3" aria-label="Secciones del sistema">
+          {tabs.map((tab) => (
+            <TabButton
+              key={tab.id}
+              icon={tab.icon}
+              label={tab.label}
+              description={tab.description}
+              active={activeTab === tab.id}
+              disabled={tab.disabled}
+              onClick={() => setActiveTab(tab.id)}
+            />
+          ))}
+        </nav>
 
-        <UploadExcel
-          primaryFile={primaryFile}
-          secondaryFiles={secondaryFiles}
-          payrollFile={payrollFile}
-          disabled={isBusy}
-          onPrimaryFile={handlePrimaryFile}
-          onSecondaryFiles={setSecondaryFiles}
-          onPayrollFile={setPayrollFile}
-        />
-
-        <ProgressBar progress={progress} status={status} />
-
-        {preview.availableMonths?.length ? (
-          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70">
-            <label className="grid gap-1.5 sm:max-w-xs">
-              <span className="text-xs font-semibold uppercase text-slate-500">
-                Mes a calcular
-              </span>
-              <select
-                className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
-                value={selectedMonth?.key ?? ''}
+        {activeTab === 'processing' ? (
+          <section className="space-y-5">
+            {defaultScheduleType === SCHEDULE_TYPES.MODIFIED ? (
+              <ModifiedScheduleEditor
+                value={modifiedSchedule}
                 disabled={isBusy}
-                onChange={(event) => {
-                  const month = preview.availableMonths.find((option) => option.key === event.target.value);
-                  setSelectedMonth(month ?? null);
+                onChange={(nextSchedule) => {
+                  setModifiedSchedule(nextSchedule);
                   setResult(null);
                   clearLastResult();
                 }}
-              >
-                {preview.availableMonths.map((month) => (
-                  <option key={month.key} value={month.key}>
-                    {month.label} ({month.rowCount.toLocaleString()} fila(s))
-                  </option>
+              />
+            ) : null}
+
+            <UploadExcel
+              primaryFile={primaryFile}
+              secondaryFiles={secondaryFiles}
+              payrollFile={payrollFile}
+              disabled={isBusy}
+              onPrimaryFile={handlePrimaryFile}
+              onSecondaryFiles={setSecondaryFiles}
+              onPayrollFile={setPayrollFile}
+            />
+
+            <ProgressBar progress={progress} status={status} />
+
+            {preview.availableMonths?.length ? (
+              <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70">
+                <label className="grid gap-1.5 sm:max-w-xs">
+                  <span className="text-xs font-semibold uppercase text-slate-500">
+                    Mes a calcular
+                  </span>
+                  <select
+                    className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                    value={selectedMonth?.key ?? ''}
+                    disabled={isBusy}
+                    onChange={(event) => {
+                      const month = preview.availableMonths.find((option) => option.key === event.target.value);
+                      setSelectedMonth(month ?? null);
+                      setResult(null);
+                      clearLastResult();
+                    }}
+                  >
+                    {preview.availableMonths.map((month) => (
+                      <option key={month.key} value={month.key}>
+                        {month.label} ({month.rowCount.toLocaleString()} fila(s))
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </section>
+            ) : null}
+
+            {errors.length ? (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-800">
+                {errors.map((error) => (
+                  <div key={error}>{error}</div>
                 ))}
-              </select>
-            </label>
+              </div>
+            ) : null}
+
+            {result?.metadata?.extendedSchedule?.files?.length ? (
+              <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900 shadow-sm">
+                <div className="font-semibold">
+                  Horario extendido detectado por CODIGO:{' '}
+                  {result.metadata.extendedSchedule.extendedEmployeeCodes.length} empleado(s)
+                </div>
+                <div className="mt-1">
+                  Mes evaluado: {result.metadata.extendedSchedule.evaluationMonth?.label ?? 'no detectado'}.
+                </div>
+                {result.metadata.extendedSchedule.files.map((file) => (
+                  <div key={`${file.fileName}-${file.sheetName}`} className="mt-1">
+                    {file.fileName}: hoja "{file.sheetName}", columna "{file.codeHeader ?? 'no detectada'}".
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {result?.metadata?.warnings?.length ? (
+              <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm font-medium text-orange-900">
+                {result.metadata.warnings.map((warning) => (
+                  <div key={warning}>{warning}</div>
+                ))}
+              </div>
+            ) : null}
+
+            {result?.metadata?.payroll?.fileName ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm">
+                <div className="font-semibold">
+                  Nómina cruzada por CODIGO: {result.metadata.payroll.employeesDetected} empleado(s)
+                  detectado(s)
+                </div>
+                <div className="mt-1">
+                  {result.metadata.payroll.fileName}: hoja "{result.metadata.payroll.sheetName}",{' '}
+                  {result.metadata.excludedRowsByPayroll ?? 0} fila(s) excluida(s) de cálculos.
+                </div>
+              </div>
+            ) : null}
+
+            <ColumnMapper
+              headers={preview.headers}
+              mapping={mapping}
+              disabled={isBusy}
+              onChange={setMapping}
+            />
+
+            {preview.headers.length ? (
+              <div className="flex justify-end">
+                <button
+                  className="inline-flex h-11 items-center gap-2 rounded-md bg-slate-950 px-5 text-sm font-semibold text-white shadow-sm shadow-slate-900/10 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+                  type="button"
+                  disabled={isBusy || !mappingValidation.isValid}
+                  onClick={processFile}
+                >
+                  {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                  Procesar asistencia
+                </button>
+              </div>
+            ) : null}
+
+            <DataPreview
+              rows={preview.previewRows}
+              title="Vista previa de datos"
+              description="Primeras filas detectadas antes del procesamiento."
+            />
           </section>
         ) : null}
 
-        {errors.length ? (
-          <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-800">
-            {errors.map((error) => (
-              <div key={error}>{error}</div>
-            ))}
-          </div>
-        ) : null}
-
-        {restoredFromStorage && lastSession && result ? (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900">
-            Resultado recuperado de localStorage: {lastSession.processedRows.toLocaleString()} fila(s)
-            procesada(s).
-          </div>
-        ) : null}
-
-        {result?.metadata?.extendedSchedule?.files?.length ? (
-          <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900 shadow-sm">
-            <div className="font-semibold">
-              Horario extendido detectado por CODIGO:{' '}
-              {result.metadata.extendedSchedule.extendedEmployeeCodes.length} empleado(s)
-            </div>
-            <div className="mt-1">
-              Mes evaluado: {result.metadata.extendedSchedule.evaluationMonth?.label ?? 'no detectado'}.
-            </div>
-            {result.metadata.extendedSchedule.files.map((file) => (
-              <div key={`${file.fileName}-${file.sheetName}`} className="mt-1">
-                {file.fileName}: hoja "{file.sheetName}", columna "{file.codeHeader ?? 'no detectada'}".
+        {activeTab === 'summary' ? (
+          <section className="space-y-5">
+            {restoredFromStorage && lastSession && result ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900">
+                Resultado recuperado de localStorage: {lastSession.processedRows.toLocaleString()} fila(s)
+                procesada(s).
               </div>
-            ))}
-          </div>
-        ) : null}
+            ) : null}
 
-        {result?.metadata?.warnings?.length ? (
-          <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm font-medium text-orange-900">
-            {result.metadata.warnings.map((warning) => (
-              <div key={warning}>{warning}</div>
-            ))}
-          </div>
-        ) : null}
-
-        {result?.metadata?.payroll?.fileName ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm">
-            <div className="font-semibold">
-              Nómina cruzada por CODIGO: {result.metadata.payroll.employeesDetected} empleado(s)
-              detectado(s)
+            <div className="flex justify-end">
+              <ExportButton
+                result={result}
+                disabled={isBusy || hasPendingAudit}
+                reportOptions={{ dghCode }}
+                filename={exportFilename}
+              />
             </div>
-            <div className="mt-1">
-              {result.metadata.payroll.fileName}: hoja "{result.metadata.payroll.sheetName}",{' '}
-              {result.metadata.excludedRowsByPayroll ?? 0} fila(s) excluida(s) de cálculos.
-            </div>
-          </div>
+
+            <SummaryCards result={result} />
+
+            {result ? (
+              <AuditReviewPanel
+                audit={result.audit}
+                disabled={isBusy}
+                onAdjust={handleAuditAdjustment}
+              />
+            ) : null}
+
+            {hasPendingAudit ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950">
+                El Excel final se habilita cuando todos los empleados y el total general esten cuadrados.
+              </div>
+            ) : null}
+
+            <DataPreview
+              rows={result?.summaryByEmployee}
+              title="Resumen por empleado"
+              description="Detalle individual listo para exportar, con subtotales disponibles en el Excel final."
+            />
+          </section>
         ) : null}
 
-        <ColumnMapper
-          headers={preview.headers}
-          mapping={mapping}
-          disabled={isBusy}
-          onChange={setMapping}
-        />
-
-        {preview.headers.length ? (
-          <div className="flex justify-end">
-            <button
-              className="inline-flex h-11 items-center gap-2 rounded-md bg-slate-950 px-5 text-sm font-semibold text-white shadow-sm shadow-slate-900/10 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
-              type="button"
-              disabled={isBusy || !mappingValidation.isValid}
-              onClick={processFile}
-            >
-              {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              Procesar asistencia
-            </button>
-          </div>
-        ) : null}
-
-        <SummaryCards result={result} />
-
-        {result ? (
-          <AuditReviewPanel
-            audit={result.audit}
-            disabled={isBusy}
-            onAdjust={handleAuditAdjustment}
-          />
-        ) : null}
-
-        {hasPendingAudit ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950">
-            El Excel final se habilita cuando todos los empleados y el total general esten cuadrados.
-          </div>
-        ) : null}
-
-        {result ? (
-          <DataPreview
-            rows={result.summaryByEmployee}
-            title="Resumen por empleado"
-            description="Detalle individual listo para exportar, con subtotales disponibles en el Excel final."
-          />
-        ) : (
-          <DataPreview
-            rows={preview.previewRows}
-            title="Vista previa de datos"
-            description="Primeras filas detectadas antes del procesamiento."
-          />
-        )}
+        {activeTab === 'alerts' ? <EmployeeAlerts result={result} /> : null}
       </div>
     </main>
   );
