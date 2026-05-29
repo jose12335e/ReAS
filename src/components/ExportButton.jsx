@@ -58,7 +58,7 @@ export default function ExportButton({ result, disabled, reportOptions, filename
   return (
     <div className="flex flex-col items-start gap-2">
       <button
-        className="inline-flex h-10 items-center gap-2 rounded-md bg-teal-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+        className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-teal-700 px-4 text-sm font-semibold text-white shadow-sm shadow-teal-900/10 transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
         type="button"
         disabled={disabled || !result || isExporting}
         onClick={handleExport}

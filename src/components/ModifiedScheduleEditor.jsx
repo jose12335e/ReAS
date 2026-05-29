@@ -40,10 +40,10 @@ export default function ModifiedScheduleEditor({ value, disabled, onChange }) {
   }
 
   return (
-    <section className="rounded-lg border border-teal-100 bg-white p-4 shadow-sm">
+    <section className="rounded-lg border border-teal-100 bg-white p-4 shadow-sm shadow-slate-200/70">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <span className="grid h-9 w-9 place-items-center rounded-md bg-teal-50 text-teal-700">
+          <span className="grid h-9 w-9 place-items-center rounded-lg bg-teal-50 text-teal-700">
             <Clock3 className="h-5 w-5" />
           </span>
           <div>
@@ -57,7 +57,7 @@ export default function ModifiedScheduleEditor({ value, disabled, onChange }) {
 
       <div className="mt-4 overflow-x-auto">
         <div className="min-w-[720px] rounded-md border border-slate-200">
-          <div className="grid grid-cols-[1.2fr_0.8fr_1fr_1fr_0.8fr] bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <div className="grid grid-cols-[1.2fr_0.8fr_1fr_1fr_0.8fr] bg-slate-900 text-xs font-semibold uppercase text-white">
             <div className="px-3 py-2">Dia</div>
             <div className="px-3 py-2 text-center">Trabaja</div>
             <div className="px-3 py-2">Entrada</div>

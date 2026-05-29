@@ -30,26 +30,30 @@ export default function DataPreview({ rows, title = 'Vista previa', description 
   if (!rows?.length) return null;
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <Table2 className="h-5 w-5 text-teal-700" />
+            <span className="grid h-9 w-9 place-items-center rounded-lg bg-indigo-50 text-indigo-700">
+              <Table2 className="h-5 w-5" />
+            </span>
             <h2 className="text-base font-semibold text-slate-900">{title}</h2>
           </div>
           {description ? <p className="mt-1 text-sm text-slate-600">{description}</p> : null}
         </div>
-        <span className="text-sm text-slate-500">{rows.length.toLocaleString()} fila(s)</span>
+        <span className="rounded-md bg-slate-100 px-3 py-1.5 text-sm font-semibold text-slate-600">
+          {rows.length.toLocaleString()} fila(s)
+        </span>
       </div>
 
-      <div className="overflow-hidden rounded-md border border-slate-200">
+      <div className="overflow-hidden rounded-md border border-slate-200 shadow-sm">
         <div className="max-h-[480px] overflow-auto">
           <table className="min-w-full border-collapse text-left text-sm">
-            <thead className="sticky top-0 z-10 bg-slate-100 text-xs uppercase text-slate-600">
+            <thead className="sticky top-0 z-10 bg-slate-900 text-xs uppercase text-white">
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
-                    <th key={header.id} className="whitespace-nowrap border-b border-slate-200 px-3 py-2 font-semibold">
+                    <th key={header.id} className="whitespace-nowrap border-b border-slate-700 px-3 py-2.5 font-semibold">
                       {flexRender(header.column.columnDef.header, header.getContext())}
                     </th>
                   ))}
@@ -58,7 +62,7 @@ export default function DataPreview({ rows, title = 'Vista previa', description 
             </thead>
             <tbody>
               {table.getRowModel().rows.map((row) => (
-                <tr key={row.id} className="odd:bg-white even:bg-slate-50/60">
+                <tr key={row.id} className="odd:bg-white even:bg-slate-50/60 hover:bg-sky-50/70">
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="max-w-64 truncate border-b border-slate-100 px-3 py-2 text-slate-700">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}

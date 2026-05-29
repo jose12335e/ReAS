@@ -1,4 +1,4 @@
-import { Loader2, Play, ShieldCheck } from 'lucide-react';
+import { CalendarDays, FileCheck2, Loader2, Play, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import AuditReviewPanel from '../components/AuditReviewPanel.jsx';
 import ColumnMapper from '../components/ColumnMapper.jsx';
@@ -16,16 +16,18 @@ function ProgressBar({ progress, status }) {
   if (!status) return null;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
-          <Loader2 className="h-4 w-4 animate-spin text-teal-700" />
+          <span className="grid h-8 w-8 place-items-center rounded-md bg-teal-50 text-teal-700">
+            <Loader2 className="h-4 w-4 animate-spin" />
+          </span>
           {status}
         </div>
         <span className="text-sm font-semibold text-slate-700">{progress}%</span>
       </div>
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
-        <div className="h-full rounded-full bg-teal-700 transition-all" style={{ width: `${progress}%` }} />
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-200">
+        <div className="h-full rounded-full bg-teal-700 transition-all duration-300" style={{ width: `${progress}%` }} />
       </div>
     </div>
   );
@@ -225,77 +227,97 @@ export default function Dashboard() {
   const hasPendingAudit = Boolean(result?.audit?.hasDiscrepancies);
 
   return (
-    <main className="min-h-screen bg-[#f6f8fb]">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2 text-teal-800">
-              <ShieldCheck className="h-6 w-6" />
-              <span className="text-sm font-semibold uppercase tracking-wide">ReAS</span>
+    <main className="min-h-screen bg-[#eef3f7]">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
+        <header className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-3">
+                <span className="grid h-11 w-11 place-items-center rounded-lg bg-teal-700 text-white shadow-sm">
+                  <ShieldCheck className="h-6 w-6" />
+                </span>
+                <div>
+                  <div className="text-sm font-semibold uppercase text-teal-800">ReAS</div>
+                  <div className="text-xs font-medium text-slate-500">
+                    Control de asistencia institucional
+                  </div>
+                </div>
+              </div>
+              <h1 className="mt-4 text-3xl font-semibold tracking-normal text-slate-950 sm:text-4xl">
+                Procesamiento de asistencia
+              </h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                Lectura de Excel en Web Worker, reglas configurables por horario y exportacion
+                multihoja con ExcelJS.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-teal-100 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800">
+                  <FileCheck2 className="h-3.5 w-3.5" />
+                  Auditoria automatica
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-sky-100 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Mes seleccionable
+                </span>
+              </div>
             </div>
-            <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">
-              Procesamiento de asistencia
-            </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              Lectura de Excel en Web Worker, reglas configurables por horario y exportación multihoja con ExcelJS.
-            </p>
-          </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(170px,220px)_minmax(220px,280px)_minmax(230px,300px)_auto] xl:items-end">
-            <label className="grid gap-1.5">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Horario base
-              </span>
-              <select
-                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
-                value={defaultScheduleType}
-                disabled={isBusy}
-                onChange={(event) => {
-                  setDefaultScheduleType(event.target.value);
-                  setResult(null);
-                  clearLastResult();
-                }}
-              >
-                {Object.values(scheduleConfig).map((schedule) => (
-                  <option key={schedule.id} value={schedule.id}>
-                    {schedule.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="grid gap-1.5">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                No. DGH del reporte
-              </span>
-              <input
-                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:cursor-not-allowed disabled:bg-slate-100"
-                type="text"
-                value={dghCode}
-                disabled={isBusy}
-                placeholder="JCE-DGH-6064-2026"
-                onChange={(event) => setDghCode(event.target.value)}
-              />
-            </label>
-            <label className="grid gap-1.5">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Nombre del Excel
-              </span>
-              <input
-                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:cursor-not-allowed disabled:bg-slate-100"
-                type="text"
-                value={exportFilename}
-                disabled={isBusy}
-                placeholder="reporte-asistencia"
-                onChange={(event) => setExportFilename(event.target.value)}
-              />
-            </label>
-            <div className="sm:col-span-2 xl:col-span-1">
-              <ExportButton
-                result={result}
-                disabled={isBusy || hasPendingAudit}
-                reportOptions={{ dghCode }}
-                filename={exportFilename}
-              />
+            <div className="grid w-full gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 xl:w-[680px]">
+              <label className="grid gap-1.5">
+                <span className="text-xs font-semibold uppercase text-slate-500">
+                  Horario base
+                </span>
+                <select
+                  className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  value={defaultScheduleType}
+                  disabled={isBusy}
+                  onChange={(event) => {
+                    setDefaultScheduleType(event.target.value);
+                    setResult(null);
+                    clearLastResult();
+                  }}
+                >
+                  {Object.values(scheduleConfig).map((schedule) => (
+                    <option key={schedule.id} value={schedule.id}>
+                      {schedule.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1.5">
+                <span className="text-xs font-semibold uppercase text-slate-500">
+                  No. DGH del reporte
+                </span>
+                <input
+                  className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  type="text"
+                  value={dghCode}
+                  disabled={isBusy}
+                  placeholder="JCE-DGH-6064-2026"
+                  onChange={(event) => setDghCode(event.target.value)}
+                />
+              </label>
+              <label className="grid gap-1.5">
+                <span className="text-xs font-semibold uppercase text-slate-500">
+                  Nombre del Excel
+                </span>
+                <input
+                  className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  type="text"
+                  value={exportFilename}
+                  disabled={isBusy}
+                  placeholder="reporte-asistencia"
+                  onChange={(event) => setExportFilename(event.target.value)}
+                />
+              </label>
+              <div className="grid content-end">
+                <ExportButton
+                  result={result}
+                  disabled={isBusy || hasPendingAudit}
+                  reportOptions={{ dghCode }}
+                  filename={exportFilename}
+                />
+              </div>
             </div>
           </div>
         </header>
@@ -325,13 +347,13 @@ export default function Dashboard() {
         <ProgressBar progress={progress} status={status} />
 
         {preview.availableMonths?.length ? (
-          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70">
             <label className="grid gap-1.5 sm:max-w-xs">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <span className="text-xs font-semibold uppercase text-slate-500">
                 Mes a calcular
               </span>
               <select
-                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
                 value={selectedMonth?.key ?? ''}
                 disabled={isBusy}
                 onChange={(event) => {
@@ -352,7 +374,7 @@ export default function Dashboard() {
         ) : null}
 
         {errors.length ? (
-          <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-800">
             {errors.map((error) => (
               <div key={error}>{error}</div>
             ))}
@@ -360,14 +382,14 @@ export default function Dashboard() {
         ) : null}
 
         {restoredFromStorage && lastSession && result ? (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900">
             Resultado recuperado de localStorage: {lastSession.processedRows.toLocaleString()} fila(s)
             procesada(s).
           </div>
         ) : null}
 
         {result?.metadata?.extendedSchedule?.files?.length ? (
-          <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
+          <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900 shadow-sm">
             <div className="font-semibold">
               Horario extendido detectado por CODIGO:{' '}
               {result.metadata.extendedSchedule.extendedEmployeeCodes.length} empleado(s)
@@ -384,7 +406,7 @@ export default function Dashboard() {
         ) : null}
 
         {result?.metadata?.warnings?.length ? (
-          <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+          <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm font-medium text-orange-900">
             {result.metadata.warnings.map((warning) => (
               <div key={warning}>{warning}</div>
             ))}
@@ -392,7 +414,7 @@ export default function Dashboard() {
         ) : null}
 
         {result?.metadata?.payroll?.fileName ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm">
             <div className="font-semibold">
               Nómina cruzada por CODIGO: {result.metadata.payroll.employeesDetected} empleado(s)
               detectado(s)
@@ -414,7 +436,7 @@ export default function Dashboard() {
         {preview.headers.length ? (
           <div className="flex justify-end">
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="inline-flex h-11 items-center gap-2 rounded-md bg-slate-950 px-5 text-sm font-semibold text-white shadow-sm shadow-slate-900/10 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
               type="button"
               disabled={isBusy || !mappingValidation.isValid}
               onClick={processFile}

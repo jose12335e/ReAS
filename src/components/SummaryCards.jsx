@@ -18,9 +18,9 @@ import {
 } from 'recharts';
 import { DISCIPLINARY_CATEGORY_META } from '../utils/disciplinaryRules.js';
 
-function MetricCard({ icon: Icon, label, value, tone }) {
+function MetricCard({ icon: Icon, label, value, tone, accent = 'border-l-teal-500' }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className={`rounded-lg border border-l-4 border-slate-200 ${accent} bg-white p-4 shadow-sm shadow-slate-200/70`}>
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm font-medium text-slate-600">{label}</span>
         <span className={`rounded-md p-2 ${tone}`}>
@@ -74,40 +74,46 @@ export default function SummaryCards({ result }) {
           label="Días a trabajar"
           value={summary.diasATrabajar}
           tone="bg-teal-50 text-teal-700"
+          accent="border-l-teal-500"
         />
         <MetricCard
           icon={UserCheck}
           label="Días trabajados"
           value={summary.diasTrabajadosCompletos}
           tone="bg-emerald-50 text-emerald-700"
+          accent="border-l-emerald-500"
         />
         <MetricCard
           icon={Clock3}
           label="Horas reconocidas"
           value={summary.horasReconocidas}
           tone="bg-sky-50 text-sky-700"
+          accent="border-l-sky-500"
         />
         <MetricCard
           icon={TimerOff}
           label="Ausentismo"
           value={`${summary.tasaAusentismo}%`}
           tone="bg-rose-50 text-rose-700"
+          accent="border-l-rose-500"
         />
         <MetricCard
           icon={AlertTriangle}
           label="Ponches irregulares"
           value={summary.ponchesIrregulares}
           tone="bg-amber-50 text-amber-700"
+          accent="border-l-amber-500"
         />
         <MetricCard
           icon={BriefcaseBusiness}
           label="Ver viático"
           value={summary.verViatico}
           tone="bg-indigo-50 text-indigo-700"
+          accent="border-l-indigo-500"
         />
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
         <div className="mb-4">
           <h2 className="text-base font-semibold text-slate-900">Clasificación disciplinaria</h2>
           <p className="mt-1 text-sm text-slate-600">
@@ -116,7 +122,7 @@ export default function SummaryCards({ result }) {
         </div>
         <div className="grid gap-3 lg:grid-cols-3">
           {disciplinaryRows.map((row) => (
-            <div key={row.key} className="rounded-lg border border-slate-200 p-4">
+            <div key={row.key} className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
               <div className="text-sm font-semibold text-slate-900">{row.label}</div>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 {Object.values(DISCIPLINARY_CATEGORY_META).map((category) => (
@@ -140,7 +146,7 @@ export default function SummaryCards({ result }) {
         </div>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
         <div className="mb-4 flex items-center justify-between gap-4">
           <div>
             <h2 className="text-base font-semibold text-slate-900">Eventualidades por ubicación</h2>
