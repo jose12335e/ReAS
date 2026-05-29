@@ -1,11 +1,4 @@
-import {
-  AlertTriangle,
-  BriefcaseBusiness,
-  CalendarCheck,
-  Clock3,
-  TimerOff,
-  UserCheck,
-} from 'lucide-react';
+import { ClipboardList } from 'lucide-react';
 import {
   Bar,
   BarChart,
@@ -17,20 +10,7 @@ import {
   YAxis,
 } from 'recharts';
 import { DISCIPLINARY_CATEGORY_META } from '../utils/disciplinaryRules.js';
-
-function MetricCard({ icon: Icon, label, value, tone, accent = 'border-l-teal-500' }) {
-  return (
-    <div className={`rounded-lg border border-l-4 border-slate-200 ${accent} bg-white p-4 shadow-sm shadow-slate-200/70`}>
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium text-slate-600">{label}</span>
-        <span className={`rounded-md p-2 ${tone}`}>
-          <Icon className="h-4 w-4" />
-        </span>
-      </div>
-      <div className="mt-3 text-2xl font-semibold text-slate-950">{value}</div>
-    </div>
-  );
-}
+import { parseDurationToMinutes } from '../utils/timeUtils.js';
 
 const DISCIPLINARY_KEYS = [
   { key: 'tardanzas', label: 'Tardanzas' },
@@ -51,10 +31,68 @@ function buildDisciplinaryCounts(employees = [], key) {
   return counts;
 }
 
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString('es-DO');
+}
+
+function formatPercent(value) {
+  return `${Math.round(Number(value || 0))}%`;
+}
+
+function hoursToDuration(value) {
+  const minutes = Math.round(Number(value || 0) * 60);
+  return minutesToDuration(minutes);
+}
+
+function minutesToDuration(totalMinutes = 0) {
+  const safeMinutes = Math.max(0, Math.round(Number(totalMinutes || 0)));
+  const hours = Math.floor(safeMinutes / 60);
+  const minutes = safeMinutes % 60;
+  return `${hours}:${String(minutes).padStart(2, '0')}:00`;
+}
+
+function durationToDisplay(value) {
+  return minutesToDuration(parseDurationToMinutes(value));
+}
+
+function SummaryLine({ label, value }) {
+  return (
+    <li className="flex items-start gap-3">
+      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-900" />
+      <span className="min-w-0 text-sm italic text-slate-700">
+        {label}: <strong className="font-semibold text-slate-950">{value}</strong>
+      </span>
+    </li>
+  );
+}
+
+function SummaryBlock({ title, children }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <h3 className="text-base font-semibold text-slate-950">{title}</h3>
+      <ul className="mt-3 space-y-2">{children}</ul>
+    </div>
+  );
+}
+
 export default function SummaryCards({ result }) {
   if (!result) return null;
 
   const summary = result.summaryGeneral;
+  const diasCumplimiento =
+    summary.diasATrabajar > 0
+      ? (Number(summary.diasTrabajadosCompletos || 0) / Number(summary.diasATrabajar || 0)) * 100
+      : 0;
+  const horasCumplimiento =
+    summary.horasEsperadas > 0
+      ? (Number(summary.horasReconocidas || 0) / Number(summary.horasEsperadas || 0)) * 100
+      : 0;
+  const tiempoEventualidadesNoJustificadasMin =
+    parseDurationToMinutes(summary.tiempoTardanzaNoJustificada) +
+    parseDurationToMinutes(summary.tiempoSalidaTempranaNoJustificada) +
+    parseDurationToMinutes(summary.tiempoAusenciaNoJustificada);
+  const tiempoGeneralEventualidadesMin =
+    parseDurationToMinutes(summary.tiempoEventualidadJustificada) + tiempoEventualidadesNoJustificadasMin;
   const locationChart = result.summaryByLocation.slice(0, 8).map((row) => ({
     ubicacion: row.ubicacion,
     Ausencias: row.ausenciasJustificadas + row.ausenciasNoJustificadas,
@@ -68,49 +106,70 @@ export default function SummaryCards({ result }) {
 
   return (
     <section className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-        <MetricCard
-          icon={CalendarCheck}
-          label="Días a trabajar"
-          value={summary.diasATrabajar}
-          tone="bg-teal-50 text-teal-700"
-          accent="border-l-teal-500"
-        />
-        <MetricCard
-          icon={UserCheck}
-          label="Días trabajados"
-          value={summary.diasTrabajadosCompletos}
-          tone="bg-emerald-50 text-emerald-700"
-          accent="border-l-emerald-500"
-        />
-        <MetricCard
-          icon={Clock3}
-          label="Horas reconocidas"
-          value={summary.horasReconocidas}
-          tone="bg-sky-50 text-sky-700"
-          accent="border-l-sky-500"
-        />
-        <MetricCard
-          icon={TimerOff}
-          label="Ausentismo"
-          value={`${summary.tasaAusentismo}%`}
-          tone="bg-rose-50 text-rose-700"
-          accent="border-l-rose-500"
-        />
-        <MetricCard
-          icon={AlertTriangle}
-          label="Ponches irregulares"
-          value={summary.ponchesIrregulares}
-          tone="bg-amber-50 text-amber-700"
-          accent="border-l-amber-500"
-        />
-        <MetricCard
-          icon={BriefcaseBusiness}
-          label="Ver viático"
-          value={summary.verViatico}
-          tone="bg-indigo-50 text-indigo-700"
-          accent="border-l-indigo-500"
-        />
+      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-lg bg-teal-50 text-teal-700">
+            <ClipboardList className="h-5 w-5" />
+          </span>
+          <div>
+            <h2 className="text-base font-semibold text-slate-950">Resumen para reporte</h2>
+            <p className="text-sm text-slate-600">Datos listos para copiar al cuadro institucional.</p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
+          <SummaryBlock title="Tiempo y días a trabajar vs tiempo y días trabajado">
+            <SummaryLine label="Días a trabajar" value={formatNumber(summary.diasATrabajar)} />
+            <SummaryLine label="Días trabajados" value={formatNumber(summary.diasTrabajadosCompletos)} />
+            <SummaryLine label="Representando un cumplimiento de" value={formatPercent(diasCumplimiento)} />
+            <SummaryLine label="Horas a trabajar" value={hoursToDuration(summary.horasEsperadas)} />
+            <SummaryLine label="Horas trabajadas" value={hoursToDuration(summary.horasReconocidas)} />
+            <SummaryLine label="Representando un cumplimiento de" value={formatPercent(horasCumplimiento)} />
+            <SummaryLine label="Tasa de ausentismo" value={formatPercent(summary.tasaAusentismo)} />
+          </SummaryBlock>
+
+          <SummaryBlock title="Tiempo general acumulado en eventualidades">
+            <SummaryLine
+              label="Tiempo acumulado de eventualidades justificadas y no justificadas"
+              value={minutesToDuration(tiempoGeneralEventualidadesMin)}
+            />
+            <SummaryLine label="Ver viático" value={formatNumber(summary.verViatico)} />
+            <SummaryLine label="Ponches irregulares" value={formatNumber(summary.ponchesIrregulares)} />
+          </SummaryBlock>
+
+          <SummaryBlock title="Eventualidades justificadas registradas">
+            <SummaryLine
+              label="Eventualidades justificadas"
+              value={formatNumber(summary.eventualidadesJustificadas)}
+            />
+            <SummaryLine
+              label="Tiempo acumulado"
+              value={durationToDisplay(summary.tiempoEventualidadJustificada)}
+            />
+          </SummaryBlock>
+
+          <SummaryBlock title="Eventualidades no justificadas registradas">
+            <SummaryLine label="Tardanzas" value={formatNumber(summary.tardanzasNoJustificadas)} />
+            <SummaryLine
+              label="Tiempo de tardanza acumulado"
+              value={durationToDisplay(summary.tiempoTardanzaNoJustificada)}
+            />
+            <SummaryLine label="Salidas tempranas" value={formatNumber(summary.salidasTempranasNoJustificadas)} />
+            <SummaryLine
+              label="Tiempo de salidas tempranas acumulado"
+              value={durationToDisplay(summary.tiempoSalidaTempranaNoJustificada)}
+            />
+            <SummaryLine label="Ausencias" value={formatNumber(summary.ausenciasNoJustificadas)} />
+            <SummaryLine
+              label="Tiempo de ausencias acumulado"
+              value={durationToDisplay(summary.tiempoAusenciaNoJustificada)}
+            />
+            <SummaryLine
+              label="Tiempo total no justificado"
+              value={minutesToDuration(tiempoEventualidadesNoJustificadasMin)}
+            />
+          </SummaryBlock>
+        </div>
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
