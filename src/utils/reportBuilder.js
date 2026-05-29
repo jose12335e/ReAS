@@ -44,10 +44,28 @@ function pickEmployeeExportRow(row) {
     'Tiempo salida temprana': row.tiempoSalidaTemprana,
     'Tiempo no trabajado justificado': row.tiempoNoTrabajadoJustificado,
     'Tiempo no trabajado no justificado': row.tiempoNoTrabajadoNoJustificado,
+    'Ajuste de cuadre': row.ajusteCuadre,
     'Tasa ausentismo': row.tasaAusentismo,
     'Ver viático': row.verViatico,
     'Observación procesada': row.observacionProcesada,
     'Estado final': row.estadoFinal,
+  };
+}
+
+function pickAuditRow(row) {
+  return {
+    CODIGO: row.codigo,
+    NOMBRE: row.nombre,
+    UBICACION: row.ubicacion,
+    'Tipo horario': row.tipoHorario,
+    'Horas esperadas': row.horasEsperadas,
+    'Horas reconocidas': row.horasReconocidas,
+    'Tiempo no trabajado justificado': row.tiempoNoTrabajadoJustificado,
+    'Tiempo no trabajado no justificado': row.tiempoNoTrabajadoNoJustificado,
+    'Total calculado': row.totalCalculado,
+    Diferencia: row.diferencia,
+    'Estado de cuadre': row.estadoCuadre,
+    'Posible causa': row.posibleCausa,
   };
 }
 
@@ -139,6 +157,7 @@ export function buildReportWorkbookData(result) {
   return {
     sheets: [
       { name: 'Data procesada', rows: result.processedRows },
+      { name: 'Auditoria de cuadre', rows: (result.audit?.employeeAudits ?? []).map(pickAuditRow) },
       { name: 'Resumen general', rows: [pickGeneralRow(result.summaryGeneral)] },
       { name: 'Resumen por ubicación', rows: locationRows },
       { name: 'Resumen por empleado', rows: employeeRowsWithSubtotals.length ? employeeRowsWithSubtotals : employeeRows },

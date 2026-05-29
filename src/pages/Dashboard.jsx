@@ -1,5 +1,6 @@
 import { Loader2, Play, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import AuditReviewPanel from '../components/AuditReviewPanel.jsx';
 import ColumnMapper from '../components/ColumnMapper.jsx';
 import DataPreview from '../components/DataPreview.jsx';
 import ExportButton from '../components/ExportButton.jsx';
@@ -8,6 +9,7 @@ import SummaryCards from '../components/SummaryCards.jsx';
 import UploadExcel from '../components/UploadExcel.jsx';
 import { scheduleConfig, SCHEDULE_TYPES } from '../config/scheduleConfig.js';
 import { useAttendanceStore } from '../store/attendanceStore.js';
+import { applyAuditAdjustment } from '../utils/auditRules.js';
 import { validateColumnMapping } from '../utils/validationRules.js';
 
 function ProgressBar({ progress, status }) {
@@ -207,6 +209,21 @@ export default function Dashboard() {
     }
   }
 
+  function handleAuditAdjustment(employeeAudit, bucket) {
+    setResult((current) => {
+      if (!current) return current;
+      const adjustedResult = applyAuditAdjustment(current, employeeAudit, bucket);
+      try {
+        setLastResult(adjustedResult);
+      } catch {
+        // El ajuste queda aplicado en pantalla aunque localStorage no tenga espacio suficiente.
+      }
+      return adjustedResult;
+    });
+  }
+
+  const hasPendingAudit = Boolean(result?.audit?.hasDiscrepancies);
+
   return (
     <main className="min-h-screen bg-[#f6f8fb]">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -275,7 +292,7 @@ export default function Dashboard() {
             <div className="sm:col-span-2 xl:col-span-1">
               <ExportButton
                 result={result}
-                disabled={isBusy}
+                disabled={isBusy || hasPendingAudit}
                 reportOptions={{ dghCode }}
                 filename={exportFilename}
               />
@@ -409,6 +426,20 @@ export default function Dashboard() {
         ) : null}
 
         <SummaryCards result={result} />
+
+        {result ? (
+          <AuditReviewPanel
+            audit={result.audit}
+            disabled={isBusy}
+            onAdjust={handleAuditAdjustment}
+          />
+        ) : null}
+
+        {hasPendingAudit ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950">
+            El Excel final se habilita cuando todos los empleados y el total general esten cuadrados.
+          </div>
+        ) : null}
 
         {result ? (
           <DataPreview

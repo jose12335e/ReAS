@@ -7,6 +7,7 @@ import {
 } from '../utils/extendedScheduleReader.js';
 import { parsePayrollWorkbook } from '../utils/payrollReader.js';
 import { validateColumnMapping } from '../utils/validationRules.js';
+import { recalculateAuditAndSummaries } from '../utils/auditRules.js';
 
 let cachedRows = [];
 let cachedHeaders = [];
@@ -76,12 +77,13 @@ self.onmessage = async (event) => {
         extendedSchedule.evaluationMonth,
       );
       post('progress', { value: 42, label: 'Aplicando reglas de asistencia' });
-      const result = processAttendanceRows(rows, payload.mapping, {
+      const processedResult = processAttendanceRows(rows, payload.mapping, {
         defaultScheduleType: payload.defaultScheduleType,
         modifiedSchedule: payload.modifiedSchedule,
         extendedEmployeeCodes: extendedSchedule.extendedEmployeeCodes,
         payrollEmployeesByCode: payroll.employeesByCode,
       });
+      const result = recalculateAuditAndSummaries(processedResult);
       post('progress', { value: 78, label: 'Construyendo resúmenes' });
       post('progress', { value: 100, label: 'Procesamiento completado' });
       post('process:success', {
