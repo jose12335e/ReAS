@@ -56,12 +56,58 @@ function durationToDisplay(value) {
   return minutesToDuration(parseDurationToMinutes(value));
 }
 
-function SummaryLine({ label, value }) {
+function getEmployeeName(employee) {
+  return String(employee?.nombre || employee?.codigo || 'Sin nombre').trim();
+}
+
+function buildRankingLines(employees = [], { title, valueKey, suffix, formatter = formatNumber, limit = 5 }) {
+  const rankedEmployees = employees
+    .map((employee) => ({
+      name: getEmployeeName(employee),
+      value: valueKey === 'tiempoNoTrabajadoNoJustificado'
+        ? parseDurationToMinutes(employee[valueKey])
+        : Number(employee[valueKey] || 0),
+      rawValue: employee[valueKey],
+    }))
+    .filter((employee) => employee.value > 0)
+    .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name, 'es'))
+    .slice(0, limit);
+
+  return [
+    { type: 'section', label: title },
+    ...(rankedEmployees.length
+      ? rankedEmployees.map((employee) => ({
+          type: 'rank',
+          label: employee.name,
+          value: `${formatter(employee.rawValue)} ${suffix}`,
+        }))
+      : [{ type: 'rank', label: 'Sin registros', value: '' }]),
+  ];
+}
+
+function SummaryLine({ line, label, value }) {
+  if (line?.type === 'section') {
+    return (
+      <li className="pt-2 text-sm font-semibold uppercase text-slate-950 first:pt-0">
+        {line.label}
+      </li>
+    );
+  }
+
+  const displayLabel = line?.label ?? label;
+  const displayValue = line?.value ?? value;
+  const separator = line?.type === 'rank' ? ' – ' : ': ';
+
   return (
     <li className="flex items-start gap-3">
       <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-900" />
       <span className="min-w-0 text-sm italic text-slate-700">
-        {label}: <strong className="font-semibold text-slate-950">{value}</strong>
+        {displayLabel}
+        {displayValue ? (
+          <>
+            {separator}<strong className="font-semibold text-slate-950">{displayValue}</strong>
+          </>
+        ) : null}
       </span>
     </li>
   );
@@ -70,7 +116,11 @@ function SummaryLine({ label, value }) {
 function blockToText(title, lines) {
   return [
     title,
-    ...lines.map((line) => `- ${line.label}: ${line.value}`),
+    ...lines.map((line) => {
+      if (line.type === 'section') return `\n${line.label}`;
+      if (line.type === 'rank') return line.value ? `- ${line.label} – ${line.value}` : `- ${line.label}`;
+      return line.value ? `- ${line.label}: ${line.value}` : `- ${line.label}`;
+    }),
   ].join('\n');
 }
 
@@ -95,8 +145,8 @@ function SummaryBlock({ title, lines, onCopy, copied }) {
         </button>
       </div>
       <ul className="mt-3 space-y-2">
-        {lines.map((line) => (
-          <SummaryLine key={line.label} label={line.label} value={line.value} />
+        {lines.map((line, index) => (
+          <SummaryLine key={`${line.type ?? 'line'}-${line.label}-${index}`} line={line} />
         ))}
       </ul>
     </div>
@@ -133,6 +183,29 @@ export default function SummaryCards({ result }) {
     ...item,
     counts: buildDisciplinaryCounts(result.summaryByEmployee, item.key),
   }));
+  const rankingLines = [
+    ...buildRankingLines(result.summaryByEmployee, {
+      title: 'Personas con más AUSENCIAS',
+      valueKey: 'ausenciasNoJustificadas',
+      suffix: 'ausencias',
+    }),
+    ...buildRankingLines(result.summaryByEmployee, {
+      title: 'Personas con más TARDANZAS',
+      valueKey: 'tardanzasNoJustificadas',
+      suffix: 'tardanzas',
+    }),
+    ...buildRankingLines(result.summaryByEmployee, {
+      title: 'Personas con más SALIDAS TEMPRANAS',
+      valueKey: 'salidasTempranasNoJustificadas',
+      suffix: 'salidas tempranas',
+    }),
+    ...buildRankingLines(result.summaryByEmployee, {
+      title: 'Personas con mayor TIEMPO ACUMULADO',
+      valueKey: 'tiempoNoTrabajadoNoJustificado',
+      suffix: 'horas',
+      formatter: durationToDisplay,
+    }),
+  ];
   const summaryBlocks = [
     {
       id: 'tiempo-dias',
@@ -182,6 +255,11 @@ export default function SummaryCards({ result }) {
         { label: 'Tiempo de ausencias acumulado', value: durationToDisplay(summary.tiempoAusenciaNoJustificada) },
         { label: 'Tiempo total no justificado', value: minutesToDuration(tiempoEventualidadesNoJustificadasMin) },
       ],
+    },
+    {
+      id: 'ranking-eventualidades',
+      title: 'Ranking de eventualidades por colaborador',
+      lines: rankingLines,
     },
   ];
 
