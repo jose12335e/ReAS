@@ -3,6 +3,7 @@ import {
   BarChart3,
   CalendarDays,
   FileCheck2,
+  FilePlus2,
   FileText,
   Loader2,
   Play,
@@ -22,7 +23,7 @@ import RulesPanel from '../components/RulesPanel.jsx';
 import UploadExcel from '../components/UploadExcel.jsx';
 import { scheduleConfig } from '../config/scheduleConfig.js';
 import { useAttendanceStore } from '../store/attendanceStore.js';
-import { applyAuditAdjustment } from '../utils/auditRules.js';
+import { applyAuditAdjustment, applyManualIrregularPunch } from '../utils/auditRules.js';
 import { validateColumnMapping } from '../utils/validationRules.js';
 
 function ProgressBar({ progress, status }) {
@@ -277,6 +278,41 @@ export default function Dashboard() {
     });
   }
 
+  function handleManualIrregularPunch(employeeAudit, detail) {
+    setResult((current) => {
+      if (!current) return current;
+      const adjustedResult = applyManualIrregularPunch(current, employeeAudit, detail);
+      try {
+        setLastResult(adjustedResult);
+      } catch {
+        // El ajuste queda aplicado en pantalla aunque localStorage no tenga espacio suficiente.
+      }
+      return adjustedResult;
+    });
+  }
+
+  function handleNewReport() {
+    if (
+      result &&
+      !window.confirm('Esto limpiará el reporte actual y la sesión guardada en localStorage. ¿Deseas continuar?')
+    ) {
+      return;
+    }
+    setPrimaryFile(null);
+    setSecondaryFiles([]);
+    setPayrollFile(null);
+    setPreview({ headers: [], previewRows: [], rows: [], availableMonths: [] });
+    setSelectedMonth(null);
+    setResult(null);
+    setErrors([]);
+    setProgress(0);
+    setStatus('');
+    setIsBusy(false);
+    setRestoredFromStorage(false);
+    clearLastResult();
+    setActiveTab('upload');
+  }
+
   const hasPendingAudit = Boolean(result?.audit?.hasDiscrepancies);
   const tabs = [
     {
@@ -353,6 +389,15 @@ export default function Dashboard() {
                   <CalendarDays className="h-3.5 w-3.5" />
                   Mes seleccionable
                 </span>
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-teal-200 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  type="button"
+                  disabled={isBusy}
+                  onClick={handleNewReport}
+                >
+                  <FilePlus2 className="h-3.5 w-3.5" />
+                  Nuevo reporte
+                </button>
               </div>
             </div>
 
@@ -444,6 +489,7 @@ export default function Dashboard() {
                 audit={result.audit}
                 disabled={isBusy}
                 onAdjust={handleAuditAdjustment}
+                onAddIrregularPunch={handleManualIrregularPunch}
               />
             ) : null}
           </section>

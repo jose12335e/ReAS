@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
+  Fingerprint,
   MapPin,
   PencilLine,
   ShieldAlert,
@@ -68,6 +69,7 @@ function AdjustmentButton({ children, disabled, onClick, tone = 'teal' }) {
   const tones = {
     teal: 'bg-teal-700 hover:bg-teal-800',
     navy: 'bg-slate-900 hover:bg-slate-800',
+    amber: 'bg-amber-600 hover:bg-amber-700',
   };
 
   return (
@@ -82,7 +84,15 @@ function AdjustmentButton({ children, disabled, onClick, tone = 'teal' }) {
   );
 }
 
-function DetailCard({ employee, detail, disabled, manualTime, onManualTimeChange, onApply }) {
+function DetailCard({
+  employee,
+  detail,
+  disabled,
+  manualTime,
+  onManualTimeChange,
+  onApply,
+  onAddIrregularPunch,
+}) {
   const differenceMin = Number(detail?.diferenciaMin || employee.diferenciaMin || 0);
   const isMissing = differenceMin > 0;
   const defaultTime = defaultAdjustmentTime(employee, detail);
@@ -150,6 +160,16 @@ function DetailCard({ employee, detail, disabled, manualTime, onManualTimeChange
 
       <div className="mt-4 flex flex-wrap gap-2">
         <AdjustmentButton
+          tone="amber"
+          disabled={disabled}
+          onClick={() => onAddIrregularPunch(employee, detail)}
+        >
+          <span className="inline-flex items-center gap-1">
+            <Fingerprint className="h-3.5 w-3.5" />
+            Agregar ponchado irregular
+          </span>
+        </AdjustmentButton>
+        <AdjustmentButton
           disabled={disabled || !adjustmentMinutes || !canReduceJustified}
           onClick={() =>
             onApply('justified', {
@@ -179,7 +199,7 @@ function DetailCard({ employee, detail, disabled, manualTime, onManualTimeChange
   );
 }
 
-function EmployeeAuditCard({ row, index, disabled, onAdjust }) {
+function EmployeeAuditCard({ row, index, disabled, onAdjust, onAddIrregularPunch }) {
   const [expanded, setExpanded] = useState(index === 0);
   const [manualTimes, setManualTimes] = useState({});
   const isMissing = row.diferenciaMin > 0;
@@ -292,6 +312,7 @@ function EmployeeAuditCard({ row, index, disabled, onAdjust }) {
                     manualTime={manualTimes[key]}
                     onManualTimeChange={(value) => updateDetailTime(detail, value)}
                     onApply={(bucket, options) => onAdjust(row, bucket, options)}
+                    onAddIrregularPunch={onAddIrregularPunch}
                   />
                 );
               })}
@@ -307,7 +328,7 @@ function EmployeeAuditCard({ row, index, disabled, onAdjust }) {
   );
 }
 
-export default function AuditReviewPanel({ audit, disabled, onAdjust }) {
+export default function AuditReviewPanel({ audit, disabled, onAdjust, onAddIrregularPunch }) {
   const pending = useMemo(() => audit?.pendingEmployees ?? [], [audit]);
   if (!audit) return null;
 
@@ -349,6 +370,7 @@ export default function AuditReviewPanel({ audit, disabled, onAdjust }) {
               index={index}
               disabled={disabled}
               onAdjust={onAdjust}
+              onAddIrregularPunch={onAddIrregularPunch}
             />
           ))}
         </div>

@@ -36,13 +36,14 @@ export const useAttendanceStore = create(
     }),
     {
       name: 'reas-attendance-config',
-      version: 5,
+      version: 6,
       migrate: (persistedState) => ({
         ...persistedState,
         modifiedSchedule: persistedState?.modifiedSchedule || DEFAULT_MODIFIED_SCHEDULE,
         dghCode: persistedState?.dghCode || DEFAULT_DGH_CODE,
         exportFilename: persistedState?.exportFilename || DEFAULT_EXPORT_FILENAME,
-        lastResult: null,
+        lastResult: persistedState?.lastResult || null,
+        lastSession: persistedState?.lastSession || null,
       }),
       partialize: (state) => ({
         defaultScheduleType: state.defaultScheduleType,
@@ -50,6 +51,7 @@ export const useAttendanceStore = create(
         dghCode: state.dghCode,
         exportFilename: state.exportFilename,
         mapping: state.mapping,
+        lastResult: state.lastResult,
         lastSession: state.lastSession,
       }),
     },

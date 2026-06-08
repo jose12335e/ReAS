@@ -322,6 +322,18 @@ function updateDuration(value, deltaMinutes) {
   return formatMinutes(parseDurationToMinutes(value) + deltaMinutes);
 }
 
+function subtractDuration(value, minutes) {
+  return formatMinutes(Math.max(0, parseDurationToMinutes(value) - Math.max(0, minutes)));
+}
+
+function subtractHours(value, minutes) {
+  return minutesToHours(Math.max(0, hoursToMinutes(value) - Math.max(0, minutes)));
+}
+
+function decrement(value, amount = 1) {
+  return Math.max(0, cleanNumber(value) - amount);
+}
+
 export function applyAuditAdjustment(result, employeeAudit, bucket, options = {}) {
   const difference = Number(options.differenceMin ?? employeeAudit?.diferenciaMin ?? 0);
   if (!difference || !employeeAudit?.codigo) return result;
@@ -367,5 +379,132 @@ export function applyAuditAdjustment(result, employeeAudit, bucket, options = {}
   return recalculateAuditAndSummaries({
     ...result,
     summaryByEmployee,
+  });
+}
+
+export function applyManualIrregularPunch(result, employeeAudit, detail = {}) {
+  if (!employeeAudit?.codigo) return result;
+
+  const expectedMin = Math.max(0, parseDurationToMinutes(detail.horasEsperadas));
+  const recognizedMin = Math.max(0, parseDurationToMinutes(detail.horasReconocidas));
+  const justifiedMin = Math.max(0, parseDurationToMinutes(detail.tiempoJustificado));
+  const unjustifiedMin = Math.max(0, parseDurationToMinutes(detail.tiempoNoJustificado));
+  const state = String(detail.estadoFinal || '');
+  const scopeLabel = `fila ${detail.fila || '-'} ${detail.fecha || ''}`.trim();
+  const adjustmentLabel = `Ponche irregular agregado manualmente (${scopeLabel})`;
+
+  const summaryByEmployee = (result.summaryByEmployee ?? []).map((employee) => {
+    if (
+      String(employee.codigo) !== String(employeeAudit.codigo) ||
+      String(employee.ubicacion) !== String(employeeAudit.ubicacion)
+    ) {
+      return employee;
+    }
+
+    const nextEmployee = {
+      ...employee,
+      ponchesIrregulares: cleanNumber(employee.ponchesIrregulares) + 1,
+      diasATrabajar: decrement(employee.diasATrabajar),
+      diasTrabajadosCompletos: decrement(employee.diasTrabajadosCompletos),
+      horasEsperadas: subtractHours(employee.horasEsperadas, expectedMin),
+      horasReconocidas: subtractHours(employee.horasReconocidas ?? employee.horasTrabajadasReconocidas, recognizedMin),
+      horasTrabajadasReconocidas: subtractHours(employee.horasTrabajadasReconocidas ?? employee.horasReconocidas, recognizedMin),
+      tiempoNoTrabajadoJustificado: subtractDuration(employee.tiempoNoTrabajadoJustificado, justifiedMin),
+      tiempoNoTrabajadoNoJustificado: subtractDuration(employee.tiempoNoTrabajadoNoJustificado, unjustifiedMin),
+      observacionProcesada: [employee.observacionProcesada, adjustmentLabel].filter(Boolean).join('; '),
+      estadoFinal: [employee.estadoFinal, 'Ponche irregular agregado manualmente'].filter(Boolean).join('; '),
+      ajusteCuadre: [employee.ajusteCuadre, adjustmentLabel].filter(Boolean).join('; '),
+    };
+
+    if (/tardanza/i.test(state) && unjustifiedMin > 0) {
+      nextEmployee.tardanzasNoJustificadas = decrement(nextEmployee.tardanzasNoJustificadas);
+      nextEmployee.tiempoTardanza = subtractDuration(nextEmployee.tiempoTardanza, unjustifiedMin);
+      nextEmployee.tiempoTardanzaNoJustificada = subtractDuration(
+        nextEmployee.tiempoTardanzaNoJustificada,
+        unjustifiedMin,
+      );
+    }
+
+    if (/tardanza/i.test(state) && justifiedMin > 0) {
+      nextEmployee.tardanzasJustificadas = decrement(nextEmployee.tardanzasJustificadas);
+      nextEmployee.tiempoTardanza = subtractDuration(nextEmployee.tiempoTardanza, justifiedMin);
+      nextEmployee.tiempoTardanzaJustificada = subtractDuration(
+        nextEmployee.tiempoTardanzaJustificada,
+        justifiedMin,
+      );
+    }
+
+    if (/salida temprana/i.test(state) && unjustifiedMin > 0) {
+      nextEmployee.salidasTempranasNoJustificadas = decrement(nextEmployee.salidasTempranasNoJustificadas);
+      nextEmployee.tiempoSalidaTemprana = subtractDuration(nextEmployee.tiempoSalidaTemprana, unjustifiedMin);
+      nextEmployee.tiempoSalidaTempranaNoJustificada = subtractDuration(
+        nextEmployee.tiempoSalidaTempranaNoJustificada,
+        unjustifiedMin,
+      );
+    }
+
+    if (/salida temprana/i.test(state) && justifiedMin > 0) {
+      nextEmployee.salidasTempranasJustificadas = decrement(nextEmployee.salidasTempranasJustificadas);
+      nextEmployee.tiempoSalidaTemprana = subtractDuration(nextEmployee.tiempoSalidaTemprana, justifiedMin);
+      nextEmployee.tiempoSalidaTempranaJustificada = subtractDuration(
+        nextEmployee.tiempoSalidaTempranaJustificada,
+        justifiedMin,
+      );
+    }
+
+    if (/ausencia/i.test(state) && unjustifiedMin > 0) {
+      nextEmployee.ausenciasNoJustificadas = decrement(nextEmployee.ausenciasNoJustificadas);
+      nextEmployee.tiempoAusenciaNoJustificada = subtractDuration(
+        nextEmployee.tiempoAusenciaNoJustificada,
+        unjustifiedMin,
+      );
+    }
+
+    if (/ausencia/i.test(state) && justifiedMin > 0) {
+      nextEmployee.ausenciasJustificadas = decrement(nextEmployee.ausenciasJustificadas, justifiedMin > 0 ? 1 : 0);
+      nextEmployee.tiempoAusenciaJustificada = subtractDuration(
+        nextEmployee.tiempoAusenciaJustificada,
+        justifiedMin,
+      );
+    }
+
+    if (/permiso/i.test(state)) {
+      nextEmployee.permisos = decrement(nextEmployee.permisos, justifiedMin > 0 ? 1 : 0);
+    }
+
+    if (/licencia/i.test(state)) {
+      nextEmployee.licencias = decrement(nextEmployee.licencias, justifiedMin > 0 ? 1 : 0);
+    }
+
+    if (justifiedMin > 0) {
+      nextEmployee.tiempoEventualidadJustificada = subtractDuration(
+        nextEmployee.tiempoEventualidadJustificada,
+        justifiedMin,
+      );
+    }
+
+    return nextEmployee;
+  });
+
+  const poncheRow = {
+    NOMBRE: employeeAudit.nombre,
+    CODIGO: employeeAudit.codigo,
+    UBICACION: employeeAudit.ubicacion,
+    FECHA: detail.fecha,
+    DIA: detail.dia,
+    'Hora entrada': detail.entrada,
+    'Hora salida': detail.salida,
+    'Observación original': detail.observacion,
+    'Observación procesada': adjustmentLabel,
+    'Estado final': 'Ponche irregular agregado manualmente',
+  };
+
+  return recalculateAuditAndSummaries({
+    ...result,
+    summaryByEmployee,
+    events: {
+      ...(result.events ?? {}),
+      ponchesIrregulares: [...(result.events?.ponchesIrregulares ?? []), poncheRow],
+    },
   });
 }
