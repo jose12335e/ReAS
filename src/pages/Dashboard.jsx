@@ -1,23 +1,26 @@
 import {
   AlertTriangle,
+  BarChart3,
   CalendarDays,
-  ClipboardList,
   FileCheck2,
+  FileText,
   Loader2,
   Play,
+  Settings,
   ShieldCheck,
   UploadCloud,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import AuditReviewPanel from '../components/AuditReviewPanel.jsx';
 import ColumnMapper from '../components/ColumnMapper.jsx';
+import DashboardOverview from '../components/DashboardOverview.jsx';
 import DataPreview from '../components/DataPreview.jsx';
 import EmployeeAlerts from '../components/EmployeeAlerts.jsx';
-import ExportButton from '../components/ExportButton.jsx';
-import ModifiedScheduleEditor from '../components/ModifiedScheduleEditor.jsx';
-import SummaryCards from '../components/SummaryCards.jsx';
+import ReportsPanel from '../components/ReportsPanel.jsx';
+import ResultsExplorer from '../components/ResultsExplorer.jsx';
+import RulesPanel from '../components/RulesPanel.jsx';
 import UploadExcel from '../components/UploadExcel.jsx';
-import { scheduleConfig, SCHEDULE_TYPES } from '../config/scheduleConfig.js';
+import { scheduleConfig } from '../config/scheduleConfig.js';
 import { useAttendanceStore } from '../store/attendanceStore.js';
 import { applyAuditAdjustment } from '../utils/auditRules.js';
 import { validateColumnMapping } from '../utils/validationRules.js';
@@ -83,7 +86,7 @@ export default function Dashboard() {
   const [status, setStatus] = useState('');
   const [isBusy, setIsBusy] = useState(false);
   const [restoredFromStorage, setRestoredFromStorage] = useState(false);
-  const [activeTab, setActiveTab] = useState('processing');
+  const [activeTab, setActiveTab] = useState('dashboard');
 
   const {
     defaultScheduleType,
@@ -120,7 +123,7 @@ export default function Dashboard() {
 
       if (type === 'preview:success') {
         setPreview(payload);
-        setActiveTab('processing');
+        setActiveTab('upload');
         setSelectedMonth(payload.selectedMonth ?? payload.availableMonths?.[0] ?? null);
         setMapping(payload.mapping);
         setResult(null);
@@ -144,7 +147,7 @@ export default function Dashboard() {
 
       if (type === 'process:success') {
         setResult(payload);
-        setActiveTab('summary');
+        setActiveTab('dashboard');
         setRestoredFromStorage(false);
         setErrors([]);
         setIsBusy(false);
@@ -182,8 +185,9 @@ export default function Dashboard() {
   }, [lastResult, result]);
 
   useEffect(() => {
-    if (!result && activeTab !== 'processing') {
-      setActiveTab('processing');
+    const allowedWithoutResult = ['dashboard', 'upload', 'rules'];
+    if (!result && !allowedWithoutResult.includes(activeTab)) {
+      setActiveTab('upload');
     }
   }, [activeTab, result]);
 
@@ -194,6 +198,9 @@ export default function Dashboard() {
 
   async function handlePrimaryFile(file) {
     if (!file) return;
+    if (result && !window.confirm('Ya hay un reporte procesado. ¿Deseas cargar otro archivo y limpiar el resultado actual?')) {
+      return;
+    }
     setPrimaryFile(file);
     setResult(null);
     setRestoredFromStorage(false);
@@ -273,16 +280,35 @@ export default function Dashboard() {
   const hasPendingAudit = Boolean(result?.audit?.hasDiscrepancies);
   const tabs = [
     {
-      id: 'processing',
-      label: 'Procesamiento',
-      description: 'Carga, mes, mapeo y cálculo',
+      id: 'dashboard',
+      label: 'Dashboard',
+      description: 'Métricas y gráficos generales',
+      icon: BarChart3,
+    },
+    {
+      id: 'upload',
+      label: 'Cargar archivo',
+      description: 'Excel, mes, mapeo y cálculo',
       icon: UploadCloud,
     },
     {
-      id: 'summary',
-      label: 'Resumen',
-      description: 'Reporte, auditoría y descarga',
-      icon: ClipboardList,
+      id: 'rules',
+      label: 'Reglas',
+      description: 'Horarios y configuración',
+      icon: Settings,
+    },
+    {
+      id: 'results',
+      label: 'Resultados',
+      description: 'Tabla, filtros y consulta',
+      icon: FileText,
+      disabled: !result,
+    },
+    {
+      id: 'reports',
+      label: 'Reportes',
+      description: 'Excel, PDF e impresión',
+      icon: FileCheck2,
       disabled: !result,
     },
     {
@@ -340,6 +366,12 @@ export default function Dashboard() {
                   value={defaultScheduleType}
                   disabled={isBusy}
                   onChange={(event) => {
+                    if (
+                      result &&
+                      !window.confirm('Cambiar el horario base limpiará el resultado actual. ¿Deseas continuar?')
+                    ) {
+                      return;
+                    }
                     setDefaultScheduleType(event.target.value);
                     setResult(null);
                     clearLastResult();
@@ -382,7 +414,7 @@ export default function Dashboard() {
           </div>
         </header>
 
-        <nav className="grid gap-3 md:grid-cols-3" aria-label="Secciones del sistema">
+        <nav className="grid gap-3 md:grid-cols-2 xl:grid-cols-6" aria-label="Secciones del sistema">
           {tabs.map((tab) => (
             <TabButton
               key={tab.id}
@@ -396,20 +428,29 @@ export default function Dashboard() {
           ))}
         </nav>
 
-        {activeTab === 'processing' ? (
+        {activeTab === 'dashboard' ? (
           <section className="space-y-5">
-            {defaultScheduleType === SCHEDULE_TYPES.MODIFIED ? (
-              <ModifiedScheduleEditor
-                value={modifiedSchedule}
-                disabled={isBusy}
-                onChange={(nextSchedule) => {
-                  setModifiedSchedule(nextSchedule);
-                  setResult(null);
-                  clearLastResult();
-                }}
-              />
+            {restoredFromStorage && lastSession && result ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900">
+                Resultado recuperado de localStorage: {lastSession.processedRows.toLocaleString()} fila(s)
+                procesada(s).
+              </div>
             ) : null}
 
+            <DashboardOverview result={result} />
+
+            {result ? (
+              <AuditReviewPanel
+                audit={result.audit}
+                disabled={isBusy}
+                onAdjust={handleAuditAdjustment}
+              />
+            ) : null}
+          </section>
+        ) : null}
+
+        {activeTab === 'upload' ? (
+          <section className="space-y-5">
             <UploadExcel
               primaryFile={primaryFile}
               secondaryFiles={secondaryFiles}
@@ -524,46 +565,37 @@ export default function Dashboard() {
           </section>
         ) : null}
 
-        {activeTab === 'summary' ? (
-          <section className="space-y-5">
-            {restoredFromStorage && lastSession && result ? (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900">
-                Resultado recuperado de localStorage: {lastSession.processedRows.toLocaleString()} fila(s)
-                procesada(s).
-              </div>
-            ) : null}
+        {activeTab === 'rules' ? (
+          <RulesPanel
+            defaultScheduleType={defaultScheduleType}
+            modifiedSchedule={modifiedSchedule}
+            disabled={isBusy}
+            onModifiedScheduleChange={(nextSchedule) => {
+              if (
+                result &&
+                !window.confirm('Modificar las reglas limpiará el resultado actual. ¿Deseas continuar?')
+              ) {
+                return;
+              }
+              setModifiedSchedule(nextSchedule);
+              setResult(null);
+              clearLastResult();
+            }}
+          />
+        ) : null}
 
-            <div className="flex justify-end">
-              <ExportButton
-                result={result}
-                disabled={isBusy || hasPendingAudit}
-                reportOptions={{ dghCode }}
-                filename={exportFilename}
-              />
-            </div>
+        {activeTab === 'results' ? (
+          <ResultsExplorer result={result} selectedMonth={selectedMonth} />
+        ) : null}
 
-            <SummaryCards result={result} />
-
-            {result ? (
-              <AuditReviewPanel
-                audit={result.audit}
-                disabled={isBusy}
-                onAdjust={handleAuditAdjustment}
-              />
-            ) : null}
-
-            {hasPendingAudit ? (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950">
-                El Excel final se habilita cuando todos los empleados y el total general esten cuadrados.
-              </div>
-            ) : null}
-
-            <DataPreview
-              rows={result?.summaryByEmployee}
-              title="Resumen por empleado"
-              description="Detalle individual listo para exportar, con subtotales disponibles en el Excel final."
-            />
-          </section>
+        {activeTab === 'reports' ? (
+          <ReportsPanel
+            result={result}
+            disabled={isBusy}
+            hasPendingAudit={hasPendingAudit}
+            reportOptions={{ dghCode }}
+            filename={exportFilename}
+          />
         ) : null}
 
         {activeTab === 'alerts' ? <EmployeeAlerts result={result} /> : null}
