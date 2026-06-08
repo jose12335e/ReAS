@@ -67,7 +67,105 @@ function minutesToHours(value) {
   return Math.round((Number(value || 0) / 60) * 100) / 100;
 }
 
-export function auditEmployee(employee) {
+function employeeKey(row = {}) {
+  return [
+    row.ubicacion ?? row.UBICACION ?? '',
+    row.codigo ?? row.CODIGO ?? '',
+    row.nombre ?? row.NOMBRE ?? '',
+  ].map((value) => String(value ?? '').trim()).join('::');
+}
+
+function processedRowValue(row, field) {
+  return row?.[field] ?? '';
+}
+
+function buildDailyAuditDetail(row) {
+  const expectedMin = hoursToMinutes(processedRowValue(row, 'Horas esperadas'));
+  const recognizedMin = hoursToMinutes(processedRowValue(row, 'Horas trabajadas reconocidas'));
+  const justifiedMin = parseDurationToMinutes(processedRowValue(row, 'Tiempo no trabajado justificado'));
+  const unjustifiedMin = parseDurationToMinutes(processedRowValue(row, 'Tiempo no trabajado no justificado'));
+  const explainedMin = recognizedMin + justifiedMin + unjustifiedMin;
+  const differenceMin = expectedMin - explainedMin;
+  const state = String(processedRowValue(row, 'Estado final') || '');
+  const observation = String(processedRowValue(row, 'Observación original') || '');
+  const reviewHints = [];
+
+  if (differenceMin > 0) {
+    reviewHints.push('Falta tiempo por clasificar en este día.');
+  }
+  if (differenceMin < 0) {
+    reviewHints.push('El tiempo explicado excede las horas esperadas del día.');
+  }
+  if (expectedMin > 0 && recognizedMin === 0 && justifiedMin === 0 && unjustifiedMin === 0) {
+    reviewHints.push('Día exigible sin horas reconocidas ni tiempo no trabajado.');
+  }
+  if (/permiso/i.test(observation) && !processedRowValue(row, 'Tiempo observaciones')) {
+    reviewHints.push('Permiso sin tiempo de observación registrado.');
+  }
+  if (/ponche irregular|ponche incompleto/i.test(state)) {
+    reviewHints.push('Ponche pendiente de revisión.');
+  }
+  if (/tardanza no justificada/i.test(state)) {
+    reviewHints.push('Tardanza no justificada detectada.');
+  }
+  if (/salida temprana no justificada/i.test(state)) {
+    reviewHints.push('Salida temprana no justificada detectada.');
+  }
+  if (/ausencia no justificada/i.test(state)) {
+    reviewHints.push('Ausencia no justificada detectada.');
+  }
+
+  return {
+    fila: processedRowValue(row, '#'),
+    fecha: processedRowValue(row, 'FECHA'),
+    dia: processedRowValue(row, 'DIA'),
+    entrada: processedRowValue(row, 'Hora entrada') || 'vacía',
+    salida: processedRowValue(row, 'Hora salida') || 'vacía',
+    observacion: observation || 'vacía',
+    tiempoObservaciones: processedRowValue(row, 'Tiempo observaciones') || 'vacío',
+    horasEsperadas: formatMinutes(expectedMin),
+    horasReconocidas: formatMinutes(recognizedMin),
+    tiempoJustificado: processedRowValue(row, 'Tiempo no trabajado justificado'),
+    tiempoNoJustificado: processedRowValue(row, 'Tiempo no trabajado no justificado'),
+    totalCalculado: formatMinutes(explainedMin),
+    diferenciaMin: differenceMin,
+    diferencia: formatMinutes(differenceMin),
+    estadoFinal: state || 'Sin estado',
+    posibleFallo: reviewHints[0] ?? 'Revisar clasificación del día.',
+    pistas: reviewHints,
+  };
+}
+
+function buildDailyAuditDetails(processedRows = [], employeeDifferenceMin = 0) {
+  const details = processedRows.map(buildDailyAuditDetail);
+  const directFindings = details.filter((detail) => detail.diferenciaMin !== 0);
+  if (directFindings.length) {
+    return directFindings.sort(
+      (a, b) => Math.abs(b.diferenciaMin) - Math.abs(a.diferenciaMin),
+    );
+  }
+
+  const relevantPattern =
+    employeeDifferenceMin > 0
+      ? /sin horas reconocidas|permiso sin tiempo|ausencia|ponche/i
+      : /excede|permiso|licencia|ausencia|tardanza|salida/i;
+
+  return details
+    .filter((detail) =>
+      detail.pistas.some((hint) => relevantPattern.test(hint)) ||
+      relevantPattern.test(detail.estadoFinal),
+    )
+    .sort((a, b) => {
+      const aImpact =
+        parseDurationToMinutes(a.tiempoJustificado) + parseDurationToMinutes(a.tiempoNoJustificado);
+      const bImpact =
+        parseDurationToMinutes(b.tiempoJustificado) + parseDurationToMinutes(b.tiempoNoJustificado);
+      return bImpact - aImpact;
+    })
+    .slice(0, 5);
+}
+
+export function auditEmployee(employee, processedRows = []) {
   const expectedMin = hoursToMinutes(employee.horasEsperadas);
   const recognizedMin = hoursToMinutes(
     employee.horasReconocidas ?? employee.horasTrabajadasReconocidas,
@@ -76,6 +174,7 @@ export function auditEmployee(employee) {
   const unjustifiedMin = parseDurationToMinutes(employee.tiempoNoTrabajadoNoJustificado);
   const explainedMin = recognizedMin + justifiedMin + unjustifiedMin;
   const differenceMin = expectedMin - explainedMin;
+  const detalles = buildDailyAuditDetails(processedRows, differenceMin);
   const status =
     differenceMin === 0
       ? 'Cuadrado'
@@ -97,18 +196,28 @@ export function auditEmployee(employee) {
     diferencia: formatMinutes(differenceMin),
     estadoCuadre: status,
     requiereRevision: differenceMin !== 0,
+    detalles,
     posibleCausa:
-      differenceMin > 0
+      detalles[0]?.posibleFallo ??
+      (differenceMin > 0
         ? 'Falta clasificar tiempo no trabajado.'
         : differenceMin < 0
           ? 'El tiempo explicado supera las horas esperadas.'
-          : 'Sin descuadre.',
+          : 'Sin descuadre.'),
   };
 }
 
 export function auditResult(result) {
   const employees = result?.summaryByEmployee ?? [];
-  const employeeAudits = employees.map(auditEmployee);
+  const processedRowsByEmployee = (result?.processedRows ?? []).reduce((map, row) => {
+    const key = employeeKey(row);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(row);
+    return map;
+  }, new Map());
+  const employeeAudits = employees.map((employee) =>
+    auditEmployee(employee, processedRowsByEmployee.get(employeeKey(employee)) ?? []),
+  );
   const pendingEmployees = employeeAudits.filter((row) => row.requiereRevision);
   const general = buildGeneralAudit(employeeAudits);
 

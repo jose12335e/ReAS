@@ -16,6 +16,41 @@ function AuditBadge({ hasDiscrepancies }) {
   );
 }
 
+function AuditDetails({ details = [] }) {
+  if (!details.length) return null;
+
+  return (
+    <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+      <div className="text-xs font-semibold uppercase text-slate-500">Días a revisar</div>
+      <div className="mt-2 space-y-2">
+        {details.slice(0, 4).map((detail) => (
+          <div key={`${detail.fila}-${detail.fecha}-${detail.diferencia}`} className="rounded-md bg-white p-2 ring-1 ring-slate-200">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              <span className="font-semibold text-slate-950">
+                Fila {detail.fila || '-'} · {detail.fecha || 'sin fecha'} · {detail.dia || 'sin día'}
+              </span>
+              <span className={`font-semibold ${detail.diferenciaMin > 0 ? 'text-amber-700' : 'text-rose-700'}`}>
+                Descuadre {detail.diferencia}
+              </span>
+            </div>
+            <div className="mt-1 grid gap-1 text-xs text-slate-600 sm:grid-cols-2">
+              <span>Entrada: {detail.entrada}</span>
+              <span>Salida: {detail.salida}</span>
+              <span>Observación: {detail.observacion}</span>
+              <span>Tiempo obs.: {detail.tiempoObservaciones}</span>
+              <span>Esperadas: {detail.horasEsperadas}</span>
+              <span>Reconocidas: {detail.horasReconocidas}</span>
+              <span>Justificado: {detail.tiempoJustificado}</span>
+              <span>No justificado: {detail.tiempoNoJustificado}</span>
+            </div>
+            <div className="mt-1 text-xs font-medium text-slate-800">{detail.posibleFallo}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function AuditReviewPanel({ audit, disabled, onAdjust }) {
   if (!audit) return null;
 
@@ -115,6 +150,7 @@ export default function AuditReviewPanel({ audit, disabled, onAdjust }) {
                           </button>
                         </div>
                         <div className="mt-1 text-xs text-slate-500">{row.posibleCausa}</div>
+                        <AuditDetails details={row.detalles} />
                       </td>
                     </tr>
                   );
