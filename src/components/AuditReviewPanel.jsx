@@ -1,5 +1,16 @@
-import { AlertTriangle, CheckCircle2, ShieldAlert } from 'lucide-react';
-import { parseDurationToMinutes } from '../utils/auditRules.js';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Clock3,
+  MapPin,
+  PencilLine,
+  ShieldAlert,
+  UserRound,
+} from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { formatMinutes, parseDurationToMinutes } from '../utils/auditRules.js';
 
 function AuditBadge({ hasDiscrepancies }) {
   return (
@@ -16,45 +27,289 @@ function AuditBadge({ hasDiscrepancies }) {
   );
 }
 
-function AuditDetails({ details = [] }) {
-  if (!details.length) return null;
+function durationFromHours(value) {
+  const minutes = Math.round(Number(value || 0) * 60);
+  return formatMinutes(minutes);
+}
+
+function defaultAdjustmentTime(employee, detail) {
+  const detailDifference = Number(detail?.diferenciaMin || 0);
+  const employeeDifference = Number(employee?.diferenciaMin || 0);
+  return formatMinutes(Math.abs(detailDifference || employeeDifference));
+}
+
+function detailKey(employee, detail) {
+  return [employee.codigo, employee.ubicacion, detail?.fila, detail?.fecha, detail?.diferencia].join('::');
+}
+
+function fieldValue(detail, field, fallback = 'vacio') {
+  const value = detail?.[field];
+  return value == null || value === '' ? fallback : value;
+}
+
+function MetricPill({ label, value, tone = 'slate' }) {
+  const tones = {
+    slate: 'border-slate-200 bg-slate-50 text-slate-700',
+    green: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    amber: 'border-amber-200 bg-amber-50 text-amber-800',
+    rose: 'border-rose-200 bg-rose-50 text-rose-800',
+    navy: 'border-slate-800 bg-slate-900 text-white',
+  };
 
   return (
-    <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3">
-      <div className="text-xs font-semibold uppercase text-slate-500">Días a revisar</div>
-      <div className="mt-2 space-y-2">
-        {details.slice(0, 4).map((detail) => (
-          <div key={`${detail.fila}-${detail.fecha}-${detail.diferencia}`} className="rounded-md bg-white p-2 ring-1 ring-slate-200">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-              <span className="font-semibold text-slate-950">
-                Fila {detail.fila || '-'} · {detail.fecha || 'sin fecha'} · {detail.dia || 'sin día'}
-              </span>
-              <span className={`font-semibold ${detail.diferenciaMin > 0 ? 'text-amber-700' : 'text-rose-700'}`}>
-                Descuadre {detail.diferencia}
-              </span>
-            </div>
-            <div className="mt-1 grid gap-1 text-xs text-slate-600 sm:grid-cols-2">
-              <span>Entrada: {detail.entrada}</span>
-              <span>Salida: {detail.salida}</span>
-              <span>Observación: {detail.observacion}</span>
-              <span>Tiempo obs.: {detail.tiempoObservaciones}</span>
-              <span>Esperadas: {detail.horasEsperadas}</span>
-              <span>Reconocidas: {detail.horasReconocidas}</span>
-              <span>Justificado: {detail.tiempoJustificado}</span>
-              <span>No justificado: {detail.tiempoNoJustificado}</span>
-            </div>
-            <div className="mt-1 text-xs font-medium text-slate-800">{detail.posibleFallo}</div>
-          </div>
-        ))}
-      </div>
+    <div className={`rounded-lg border px-3 py-2 ${tones[tone]}`}>
+      <div className="text-[11px] font-semibold uppercase opacity-75">{label}</div>
+      <div className="mt-1 text-sm font-semibold">{value}</div>
     </div>
   );
 }
 
-export default function AuditReviewPanel({ audit, disabled, onAdjust }) {
-  if (!audit) return null;
+function AdjustmentButton({ children, disabled, onClick, tone = 'teal' }) {
+  const tones = {
+    teal: 'bg-teal-700 hover:bg-teal-800',
+    navy: 'bg-slate-900 hover:bg-slate-800',
+  };
 
-  const pending = audit.pendingEmployees ?? [];
+  return (
+    <button
+      className={`rounded-md px-3 py-2 text-xs font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-slate-300 ${tones[tone]}`}
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function DetailCard({ employee, detail, disabled, manualTime, onManualTimeChange, onApply }) {
+  const differenceMin = Number(detail?.diferenciaMin || employee.diferenciaMin || 0);
+  const isMissing = differenceMin > 0;
+  const defaultTime = defaultAdjustmentTime(employee, detail);
+  const adjustmentTime = manualTime ?? defaultTime;
+  const adjustmentMinutes = Math.abs(parseDurationToMinutes(adjustmentTime));
+  const justifiedAvailable = parseDurationToMinutes(employee.tiempoNoTrabajadoJustificado);
+  const unjustifiedAvailable = parseDurationToMinutes(employee.tiempoNoTrabajadoNoJustificado);
+  const canReduceJustified = isMissing || justifiedAvailable > 0;
+  const canReduceUnjustified = isMissing || unjustifiedAvailable > 0;
+  const scopeLabel = `fila ${detail?.fila || '-'} ${detail?.fecha || ''}`.trim();
+
+  return (
+    <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-semibold text-slate-950">
+              Fila {detail?.fila || '-'} · {detail?.fecha || 'sin fecha'} · {detail?.dia || 'sin dia'}
+            </span>
+            <span className={`rounded-md px-2 py-1 text-xs font-semibold ${isMissing ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'}`}>
+              Descuadre {detail?.diferencia || employee.diferencia}
+            </span>
+          </div>
+          <p className="mt-1 text-xs font-medium text-slate-700">{detail?.posibleFallo || employee.posibleCausa}</p>
+        </div>
+
+        <label className="grid gap-1 text-xs font-semibold uppercase text-slate-500 sm:min-w-40">
+          Tiempo del ajuste
+          <input
+            className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+            value={adjustmentTime}
+            placeholder="HH:MM:SS"
+            disabled={disabled}
+            onChange={(event) => onManualTimeChange(event.target.value)}
+          />
+        </label>
+      </div>
+
+      <div className="mt-4 grid gap-3 text-sm text-slate-700 md:grid-cols-2 xl:grid-cols-4">
+        <div>
+          <span className="block text-xs font-semibold uppercase text-slate-500">Entrada / salida</span>
+          <span className="font-medium">{fieldValue(detail, 'entrada')} / {fieldValue(detail, 'salida')}</span>
+        </div>
+        <div>
+          <span className="block text-xs font-semibold uppercase text-slate-500">Observacion</span>
+          <span className="font-medium">{fieldValue(detail, 'observacion')}</span>
+        </div>
+        <div>
+          <span className="block text-xs font-semibold uppercase text-slate-500">Tiempo obs.</span>
+          <span className="font-medium">{fieldValue(detail, 'tiempoObservaciones')}</span>
+        </div>
+        <div>
+          <span className="block text-xs font-semibold uppercase text-slate-500">Estado</span>
+          <span className="font-medium">{fieldValue(detail, 'estadoFinal', 'Sin estado')}</span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <MetricPill label="Esperadas" value={detail?.horasEsperadas || '00:00:00'} />
+        <MetricPill label="Reconocidas" value={detail?.horasReconocidas || '00:00:00'} tone="green" />
+        <MetricPill label="Justificado" value={detail?.tiempoJustificado || '00:00:00'} tone="amber" />
+        <MetricPill label="No justificado" value={detail?.tiempoNoJustificado || '00:00:00'} tone="rose" />
+        <MetricPill label="Explicado" value={detail?.totalCalculado || '00:00:00'} tone="navy" />
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <AdjustmentButton
+          disabled={disabled || !adjustmentMinutes || !canReduceJustified}
+          onClick={() =>
+            onApply('justified', {
+              adjustmentMinutes,
+              differenceMin,
+              scopeLabel,
+            })
+          }
+        >
+          {isMissing ? 'Sumar a justificado' : 'Reducir justificado'}
+        </AdjustmentButton>
+        <AdjustmentButton
+          tone="navy"
+          disabled={disabled || !adjustmentMinutes || !canReduceUnjustified}
+          onClick={() =>
+            onApply('unjustified', {
+              adjustmentMinutes,
+              differenceMin,
+              scopeLabel,
+            })
+          }
+        >
+          {isMissing ? 'Sumar a no justificado' : 'Reducir no justificado'}
+        </AdjustmentButton>
+      </div>
+    </article>
+  );
+}
+
+function EmployeeAuditCard({ row, index, disabled, onAdjust }) {
+  const [expanded, setExpanded] = useState(index === 0);
+  const [manualTimes, setManualTimes] = useState({});
+  const isMissing = row.diferenciaMin > 0;
+  const details = row.detalles ?? [];
+  const justifiedAvailable = parseDurationToMinutes(row.tiempoNoTrabajadoJustificado);
+  const unjustifiedAvailable = parseDurationToMinutes(row.tiempoNoTrabajadoNoJustificado);
+  const employeeAdjustmentMinutes = Math.abs(Number(row.diferenciaMin || 0));
+
+  function updateDetailTime(detail, value) {
+    setManualTimes((current) => ({
+      ...current,
+      [detailKey(row, detail)]: value,
+    }));
+  }
+
+  return (
+    <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-200/70">
+      <button
+        className="flex w-full flex-col gap-4 bg-slate-50 p-4 text-left transition hover:bg-slate-100 lg:flex-row lg:items-start lg:justify-between"
+        type="button"
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <div className="flex min-w-0 gap-3">
+          <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-slate-900 text-white">
+            <UserRound className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-base font-semibold text-slate-950">{row.nombre}</h3>
+              <span className="rounded-md bg-white px-2 py-1 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
+                {row.codigo}
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-3 text-sm text-slate-600">
+              <span className="inline-flex items-center gap-1">
+                <MapPin className="h-4 w-4" />
+                {row.ubicacion || 'Sin ubicacion'}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <Clock3 className="h-4 w-4" />
+                {row.tipoHorario || 'Sin horario'}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <PencilLine className="h-4 w-4" />
+                {details.length} registro(s) a revisar
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:min-w-[700px] xl:grid-cols-5">
+          <MetricPill label="Esperadas" value={durationFromHours(row.horasEsperadas)} />
+          <MetricPill label="Reconocidas" value={durationFromHours(row.horasReconocidas)} tone="green" />
+          <MetricPill label="Explicado" value={row.totalCalculado} tone="navy" />
+          <MetricPill label="Descuadre" value={row.diferencia} tone={isMissing ? 'amber' : 'rose'} />
+          <div className="flex items-center justify-end text-slate-500">
+            {expanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+          </div>
+        </div>
+      </button>
+
+      {expanded ? (
+        <div className="space-y-4 border-t border-slate-200 p-4">
+          <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-start">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+              <div className="font-semibold">Posible causa</div>
+              <p className="mt-1">{row.posibleCausa}</p>
+              <p className="mt-2 text-xs">
+                Puedes resolver todo el descuadre del empleado o aplicar un ajuste por cada registro encontrado.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <AdjustmentButton
+                disabled={disabled || !employeeAdjustmentMinutes || (!isMissing && justifiedAvailable <= 0)}
+                onClick={() =>
+                  onAdjust(row, 'justified', {
+                    adjustmentMinutes: employeeAdjustmentMinutes,
+                    differenceMin: row.diferenciaMin,
+                    scopeLabel: 'empleado completo',
+                  })
+                }
+              >
+                {isMissing ? 'Sumar todo a justificado' : 'Reducir todo justificado'}
+              </AdjustmentButton>
+              <AdjustmentButton
+                tone="navy"
+                disabled={disabled || !employeeAdjustmentMinutes || (!isMissing && unjustifiedAvailable <= 0)}
+                onClick={() =>
+                  onAdjust(row, 'unjustified', {
+                    adjustmentMinutes: employeeAdjustmentMinutes,
+                    differenceMin: row.diferenciaMin,
+                    scopeLabel: 'empleado completo',
+                  })
+                }
+              >
+                {isMissing ? 'Sumar todo a no justificado' : 'Reducir todo no justificado'}
+              </AdjustmentButton>
+            </div>
+          </div>
+
+          {details.length ? (
+            <div className="grid gap-3">
+              {details.map((detail) => {
+                const key = detailKey(row, detail);
+                return (
+                  <DetailCard
+                    key={key}
+                    employee={row}
+                    detail={detail}
+                    disabled={disabled}
+                    manualTime={manualTimes[key]}
+                    onManualTimeChange={(value) => updateDetailTime(detail, value)}
+                    onApply={(bucket, options) => onAdjust(row, bucket, options)}
+                  />
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+              No hay registros diarios identificados. Usa el ajuste del empleado completo.
+            </div>
+          )}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+export default function AuditReviewPanel({ audit, disabled, onAdjust }) {
+  const pending = useMemo(() => audit?.pendingEmployees ?? [], [audit]);
+  if (!audit) return null;
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
@@ -65,99 +320,37 @@ export default function AuditReviewPanel({ audit, disabled, onAdjust }) {
             <AuditBadge hasDiscrepancies={audit.hasDiscrepancies} />
           </div>
           <p className="mt-1 text-sm text-slate-600">
-            Verifica que horas reconocidas mas tiempo no trabajado expliquen exactamente las horas a trabajar.
+            Revisa cada empleado y ajusta el tiempo directamente por registro cuando el Excel venga con errores.
           </p>
         </div>
         <div className="grid gap-2 text-sm sm:grid-cols-3 lg:min-w-[420px]">
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-            <div className="text-xs font-semibold uppercase text-slate-500">Empleados</div>
-            <div className="mt-1 font-semibold text-slate-900">
-              {audit.general.empleadosCuadrados}/{audit.general.totalEmpleados} cuadrados
-            </div>
-          </div>
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-            <div className="text-xs font-semibold uppercase text-slate-500">Diferencia</div>
-            <div className="mt-1 font-semibold text-slate-900">{audit.general.diferencia}</div>
-          </div>
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-            <div className="text-xs font-semibold uppercase text-slate-500">Estado</div>
-            <div className="mt-1 font-semibold text-slate-900">{audit.general.estadoCuadre}</div>
-          </div>
+          <MetricPill
+            label="Empleados"
+            value={`${audit.general.empleadosCuadrados}/${audit.general.totalEmpleados} cuadrados`}
+          />
+          <MetricPill label="Diferencia" value={audit.general.diferencia} tone={audit.general.diferenciaMin ? 'rose' : 'green'} />
+          <MetricPill label="Estado" value={audit.general.estadoCuadre} tone={audit.general.diferenciaMin ? 'amber' : 'green'} />
         </div>
       </div>
 
       {pending.length ? (
-        <div className="mt-4">
-          <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+        <div className="mt-4 space-y-4">
+          <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
-              Hay empleados con descuadre. Revisa cada caso y aplica el ajuste donde corresponda antes de cerrar el
-              reporte.
+              Hay empleados con descuadre. Abre cada caso, revisa los registros detectados y aplica el tiempo correcto
+              antes de cerrar el reporte.
             </span>
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full border-collapse text-sm">
-              <thead>
-                <tr className="bg-slate-900 text-left text-xs uppercase text-white">
-                  <th className="border border-slate-200 px-3 py-2">Empleado</th>
-                  <th className="border border-slate-200 px-3 py-2">Ubicacion</th>
-                  <th className="border border-slate-200 px-3 py-2 text-right">Esperadas</th>
-                  <th className="border border-slate-200 px-3 py-2 text-right">Reconocidas</th>
-                  <th className="border border-slate-200 px-3 py-2 text-right">Total explicado</th>
-                  <th className="border border-slate-200 px-3 py-2 text-right">Descuadre</th>
-                  <th className="border border-slate-200 px-3 py-2">Ajuste</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pending.map((row) => {
-                  const isMissing = row.diferenciaMin > 0;
-                  const justifiedAvailable = parseDurationToMinutes(row.tiempoNoTrabajadoJustificado);
-                  const unjustifiedAvailable = parseDurationToMinutes(row.tiempoNoTrabajadoNoJustificado);
-                  return (
-                    <tr key={`${row.ubicacion}-${row.codigo}`} className="align-top">
-                      <td className="border border-slate-200 px-3 py-2">
-                        <div className="font-semibold text-slate-900">{row.nombre}</div>
-                        <div className="text-xs text-slate-500">{row.codigo}</div>
-                      </td>
-                      <td className="border border-slate-200 px-3 py-2 text-slate-700">{row.ubicacion}</td>
-                      <td className="border border-slate-200 px-3 py-2 text-right">{row.horasEsperadas}</td>
-                      <td className="border border-slate-200 px-3 py-2 text-right">{row.horasReconocidas}</td>
-                      <td className="border border-slate-200 px-3 py-2 text-right">{row.totalCalculado}</td>
-                      <td
-                        className={`border border-slate-200 px-3 py-2 text-right font-semibold ${
-                          isMissing ? 'text-amber-700' : 'text-rose-700'
-                        }`}
-                      >
-                        {row.diferencia}
-                      </td>
-                      <td className="border border-slate-200 px-3 py-2">
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            className="rounded-md bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                            type="button"
-                            disabled={disabled || (!isMissing && justifiedAvailable <= 0)}
-                            onClick={() => onAdjust(row, 'justified')}
-                          >
-                            {isMissing ? 'Sumar a justificado' : 'Reducir justificado'}
-                          </button>
-                          <button
-                            className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                            type="button"
-                            disabled={disabled || (!isMissing && unjustifiedAvailable <= 0)}
-                            onClick={() => onAdjust(row, 'unjustified')}
-                          >
-                            {isMissing ? 'Sumar a no justificado' : 'Reducir no justificado'}
-                          </button>
-                        </div>
-                        <div className="mt-1 text-xs text-slate-500">{row.posibleCausa}</div>
-                        <AuditDetails details={row.detalles} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {pending.map((row, index) => (
+            <EmployeeAuditCard
+              key={`${row.ubicacion}-${row.codigo}`}
+              row={row}
+              index={index}
+              disabled={disabled}
+              onAdjust={onAdjust}
+            />
+          ))}
         </div>
       ) : (
         <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">

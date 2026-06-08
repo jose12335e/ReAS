@@ -264,10 +264,10 @@ export default function Dashboard() {
     }
   }
 
-  function handleAuditAdjustment(employeeAudit, bucket) {
+  function handleAuditAdjustment(employeeAudit, bucket, options) {
     setResult((current) => {
       if (!current) return current;
-      const adjustedResult = applyAuditAdjustment(current, employeeAudit, bucket);
+      const adjustedResult = applyAuditAdjustment(current, employeeAudit, bucket, options);
       try {
         setLastResult(adjustedResult);
       } catch {

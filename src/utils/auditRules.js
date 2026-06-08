@@ -322,9 +322,14 @@ function updateDuration(value, deltaMinutes) {
   return formatMinutes(parseDurationToMinutes(value) + deltaMinutes);
 }
 
-export function applyAuditAdjustment(result, employeeAudit, bucket) {
-  const difference = Number(employeeAudit?.diferenciaMin || 0);
+export function applyAuditAdjustment(result, employeeAudit, bucket, options = {}) {
+  const difference = Number(options.differenceMin ?? employeeAudit?.diferenciaMin ?? 0);
   if (!difference || !employeeAudit?.codigo) return result;
+  const requestedMinutes =
+    options.adjustmentMinutes == null
+      ? Math.abs(difference)
+      : Math.abs(Math.round(Number(options.adjustmentMinutes || 0)));
+  if (!requestedMinutes) return result;
 
   const summaryByEmployee = (result.summaryByEmployee ?? []).map((employee) => {
     if (
@@ -339,13 +344,14 @@ export function applyAuditAdjustment(result, employeeAudit, bucket) {
         ? 'tiempoNoTrabajadoJustificado'
         : 'tiempoNoTrabajadoNoJustificado';
     const currentMinutes = parseDurationToMinutes(employee[field]);
-    const delta = difference > 0 ? difference : -Math.min(Math.abs(difference), currentMinutes);
+    const delta = difference > 0 ? requestedMinutes : -Math.min(requestedMinutes, currentMinutes);
+    const scopeLabel = options.scopeLabel ? ` (${options.scopeLabel})` : '';
     const adjustmentLabel =
       difference > 0
-        ? `Ajuste de cuadre: +${formatMinutes(Math.abs(delta))} en ${
+        ? `Ajuste de cuadre${scopeLabel}: +${formatMinutes(Math.abs(delta))} en ${
             bucket === 'justified' ? 'tiempo justificado' : 'tiempo no justificado'
           }`
-        : `Ajuste de cuadre: -${formatMinutes(Math.abs(delta))} en ${
+        : `Ajuste de cuadre${scopeLabel}: -${formatMinutes(Math.abs(delta))} en ${
             bucket === 'justified' ? 'tiempo justificado' : 'tiempo no justificado'
           }`;
 
