@@ -406,3 +406,284 @@ Las horas reales son la diferencia entre entrada y salida. Las horas reconocidas
 - Validar la hoja `Control del reporte`.
 - Validar tablas 1 a 8.
 - Guardar y distribuir el reporte por el canal autorizado.
+
+## 21. Ampliación operativa: preparación antes del procesamiento
+
+Antes de usar ReAS, el usuario debe confirmar que los archivos pertenecen al mismo período y que tienen una estructura consistente. Esta revisión previa evita reprocesos y ayuda a que los resultados sean confiables desde la primera ejecución.
+
+### Revisión del archivo principal
+
+El archivo principal de asistencia debe contener los registros del período a evaluar. Es importante confirmar que las fechas correspondan al mes correcto y que los códigos de empleados estén completos.
+
+Puntos de revisión:
+
+- Confirmar que el archivo abre correctamente en Excel.
+- Confirmar que contiene las columnas necesarias.
+- Confirmar que las fechas pertenecen al mes que se va a evaluar.
+- Confirmar que los códigos de empleados no están vacíos.
+- Confirmar que las horas de entrada y salida están en formato reconocible.
+- Confirmar que las observaciones están en la columna correcta.
+
+### Revisión del archivo de horario extendido
+
+El archivo de horario extendido debe usarse cuando existan colaboradores que no se calculan con horario normal. El cruce se realiza por código de empleado, por lo que el código debe coincidir con el código del archivo principal.
+
+Si el archivo contiene varias hojas, ReAS intenta usar la hoja correspondiente al mes evaluado. Aun así, el usuario debe revisar que la hoja seleccionada represente el período correcto.
+
+### Revisión del archivo de nómina
+
+La nómina ayuda a completar datos y aplicar exclusiones. Este archivo es especialmente importante para identificar empleados que no deben calcularse por cargo, posición o fecha de ingreso.
+
+La nómina debe revisarse cuando:
+
+- Hay empleados con nombres incompletos o inconsistentes.
+- Se requiere excluir directores o subdirectores.
+- Se requiere excluir posiciones identificadas como `DIRECCION V`.
+- Se necesita validar si un colaborador ingresó después del mes evaluado.
+
+## 22. Ampliación operativa: carga, mapeo y validación
+
+Después de cargar el archivo principal, ReAS muestra una vista previa para confirmar que la información fue leída correctamente. Esta etapa es crítica porque el sistema no debe procesar si las columnas están mal asignadas.
+
+### Mapeo de columnas
+
+El mapeo permite indicar al sistema qué columna representa cada dato. Aunque el archivo tenga encabezados diferentes, el usuario puede asociarlos manualmente.
+
+Campos que deben revisarse con especial atención:
+
+| Campo | Por qué es importante |
+|---|---|
+| Código | Es la llave para agrupar empleados y cruzar horario extendido y nómina. |
+| Nombre | Permite presentar reportes legibles y evitar confusión en tablas. |
+| Ubicación | Se usa para agrupar reportes por área o dependencia. |
+| Fecha | Define el período evaluado y permite detectar meses. |
+| Hora de entrada | Base para tardanzas y horas reales. |
+| Hora de salida | Base para salidas tempranas y horas reales. |
+| Observaciones | Define justificaciones, feriados, vacaciones, licencias, permisos y viáticos. |
+| Tiempo de observaciones | Campo opcional para permisos u observaciones con tiempo específico. |
+
+### Validaciones antes de procesar
+
+ReAS debe impedir el procesamiento cuando falta información obligatoria. Si el sistema muestra un error, el usuario debe revisar el mapeo y confirmar que el archivo realmente contiene el dato requerido.
+
+Errores comunes en esta etapa:
+
+- La columna de código fue confundida con nombre.
+- La columna de fecha no fue detectada correctamente.
+- La hora de entrada o salida está en una columna diferente.
+- La observación está vacía o en una columna auxiliar.
+- El archivo contiene encabezados repetidos.
+
+## 23. Ampliación de reglas: cómo interpreta ReAS cada caso
+
+ReAS combina información de horario, entradas, salidas y observaciones. La interpretación final depende de la combinación de esos elementos.
+
+### Día trabajado completo
+
+Un día se considera trabajado cuando el empleado registra entrada y salida válidas y las horas reconocidas completan las horas esperadas del día. Si trabaja más del tiempo esperado, ReAS reconoce únicamente las horas esperadas. Las horas extra no se suman al reporte.
+
+### Día trabajado con tardanza
+
+Si la entrada es posterior a la hora esperada, se genera tardanza. La tardanza solo se considera justificada si la observación corresponde a una justificación válida de tardanza.
+
+Regla importante:
+
+Si la persona llegó tarde y la observación dice `permiso`, no se justifica automáticamente la tardanza. Para justificar tardanza, la observación debe indicar tardanza.
+
+### Día trabajado con salida temprana
+
+Si la salida es anterior a la hora esperada, se genera salida temprana. La salida temprana se clasifica como justificada o no justificada según la observación válida asociada.
+
+### Ausencia
+
+Cuando entrada y salida están vacías, el sistema revisa la observación. Si no existe observación válida, se registra ausencia no justificada. Si existe licencia, permiso, ausencia justificada u otra observación reconocida, se clasifica como tiempo no trabajado justificado.
+
+### Licencia
+
+La licencia cuenta como día a trabajar, pero su tiempo se registra como no trabajado justificado. No debe marcarse como ausencia no justificada, tardanza ni salida temprana.
+
+Ejemplo:
+
+- Empleado HN con licencia en un día laborable.
+- Horas a trabajar: 8.
+- Horas reconocidas: 0.
+- Tiempo no trabajado justificado: 8.
+- Resultado: cuadrado si no hay otros tiempos pendientes.
+
+### Permiso
+
+El permiso se toma como tiempo no trabajado justificado. Si el archivo trae `Tiempo de observaciones`, el sistema usa ese tiempo cuando aplica. Si no existe ese tiempo, se aplican las reglas generales del día.
+
+### Feriado
+
+El feriado excluye el día del cálculo. No importa si hay ponche o no; el día no debe contar como día a trabajar y no debe generar horas esperadas.
+
+### Ver viático
+
+`Ver viático` representa trabajo externo. Cuando se detecta, el sistema reconoce el día como trabajado completo. No genera ausencia, tardanza, salida temprana ni tiempo no trabajado.
+
+### Ponchado irregular
+
+Un ponchado irregular ocurre cuando la entrada y la salida son iguales o cuando el registro requiere revisión por inconsistencia. No cuenta como día trabajado. Sin embargo, si el registro tiene observación válida como permiso, licencia o ausencia, el sistema debe tratarlo como eventualidad justificada cuando corresponda.
+
+## 24. Ampliación de cuadre y auditoría
+
+La auditoría de cuadre es una de las partes más importantes del sistema. Su objetivo es detectar diferencias entre lo que el empleado debía trabajar y lo que el sistema pudo explicar con horas reconocidas, tiempo justificado y tiempo no justificado.
+
+### Fórmula conceptual
+
+Para cada empleado, el sistema busca que se cumpla:
+
+`Horas a trabajar = Horas reconocidas + Tiempo no trabajado justificado + Tiempo no trabajado no justificado`
+
+Cuando esa relación no se cumple, se genera un descuadre.
+
+### Descuadre positivo
+
+Un descuadre positivo indica que falta tiempo por explicar. Puede ocurrir cuando hay registros sin observación, tiempos incompletos o casos que requieren revisión manual.
+
+Acciones posibles:
+
+- Revisar registros del empleado.
+- Confirmar si hubo ausencia, permiso o licencia.
+- Sumar el tiempo faltante a justificado o no justificado según corresponda.
+- Corregir el archivo original si el error viene de la fuente.
+
+### Descuadre negativo
+
+Un descuadre negativo indica que el tiempo explicado excede las horas esperadas. Puede ocurrir cuando un permiso o una observación tiene más tiempo del que corresponde para ese día.
+
+Acciones posibles:
+
+- Reducir tiempo justificado.
+- Reducir tiempo no justificado.
+- Revisar si el día era feriado o no laborable.
+- Validar si el tiempo de observación fue digitado incorrectamente.
+
+### Revisión por registros asociados
+
+Cuando el sistema muestra registros vinculados al descuadre, el usuario debe revisar cada registro antes de ajustar. La auditoría no debe resolverse sin entender el origen de la diferencia.
+
+Datos que deben revisarse:
+
+- Fecha.
+- Día de la semana.
+- Entrada.
+- Salida.
+- Observación.
+- Tiempo de observación.
+- Horas esperadas.
+- Horas reconocidas.
+- Tiempo justificado.
+- Tiempo no justificado.
+- Estado calculado.
+
+## 25. Descripción detallada de las hojas del Excel final
+
+El Excel final se organiza para que las hojas de presentación queden primero y las hojas de revisión queden después.
+
+### Control del reporte
+
+Es la hoja de trazabilidad. No se debe editar. Contiene datos del procesamiento, usuario, mes evaluado, archivo original, hoja usada, uso de nómina, uso de horario extendido y exclusiones aplicadas.
+
+### Tabla 1 Vacaciones
+
+Lista colaboradores con vacaciones registradas. Se ordena para facilitar la revisión de quienes tienen mayor cantidad.
+
+### Tabla 2 Ponchado irregular
+
+Lista colaboradores con ponches irregulares. Permite identificar registros que requieren revisión por entrada y salida iguales u otra condición irregular.
+
+### Tabla 3-5 Reglas
+
+Contiene las reglas de referencia disciplinaria para ausencias, tardanzas y salidas tempranas. Estas reglas no aplican sanciones automáticas.
+
+### Tabla 6 Horas y días
+
+Compara días a trabajar contra días trabajados, y horas a trabajar contra horas trabajadas. También muestra tasa de ausentismo.
+
+### Tabla 7 Eventualidades
+
+Consolida eventualidades justificadas y no justificadas para colaboradores de horario normal. Incluye colores disciplinarios para tardanzas, salidas tempranas y ausencias no justificadas.
+
+### Tabla 8 Eventualidades HE
+
+Tiene la misma finalidad que la Tabla 7, pero aplicada a personal con horario extendido.
+
+### Data procesada
+
+Contiene el detalle de registros procesados. Es útil para validar cómo se interpretó cada fila del archivo original.
+
+### Auditoría de cuadre
+
+Muestra empleados con diferencias entre horas a trabajar y tiempos explicados. Es la hoja de revisión para resolver descuadres.
+
+### Resúmenes
+
+Los resúmenes presentan la información consolidada a nivel general, por ubicación y por empleado.
+
+## 26. Errores comunes y acciones recomendadas
+
+| Situación | Posible causa | Acción recomendada |
+|---|---|---|
+| No se puede procesar | Falta columna obligatoria o mapeo incorrecto | Revisar mapeo y vista previa. |
+| El nombre sale como código | Nombre vacío o cruce incompleto | Revisar columna de nombre y nómina. |
+| Muchos registros salen en rojo | Acumulados no justificados altos | Revisar observaciones y justificaciones. |
+| No detecta horario extendido | Código no coincide o archivo no cargado | Revisar archivo auxiliar y códigos. |
+| No excluye directores | Nómina no cargada o posición no reconocida | Revisar columnas de cargo y posición. |
+| Hay descuadre positivo | Falta tiempo por explicar | Revisar auditoría y registros del empleado. |
+| Hay descuadre negativo | Tiempo explicado excede horas esperadas | Revisar permisos, licencias, feriados o tiempos digitados. |
+| El mes no es correcto | Archivo contiene varios meses | Seleccionar el mes correcto antes de procesar. |
+
+## 27. Roles y responsabilidades
+
+### Usuario operador
+
+Responsable de cargar archivos, validar mapeos, ejecutar procesamiento y revisar resultados iniciales.
+
+### Revisor de Gestión Humana
+
+Responsable de validar auditoría, confirmar ajustes, revisar casos críticos y aprobar el reporte final.
+
+### Supervisor o responsable de área
+
+Puede usar las tablas y rankings para identificar colaboradores que requieren revisión o seguimiento.
+
+### Soporte técnico
+
+Responsable de mantener el sistema, revisar errores técnicos y actualizar reglas cuando la institución lo requiera.
+
+## 28. Preparación para presentar ReAS al equipo
+
+La presentación debe enfocarse primero en el problema que ReAS resuelve y luego en la demostración del sistema. El equipo debe entender que ReAS no elimina la revisión humana; la hace más rápida, ordenada y trazable.
+
+Orden recomendado:
+
+1. Presentar el problema del proceso manual.
+2. Explicar qué es ReAS.
+3. Mostrar archivos de entrada.
+4. Mostrar carga y selección de mes.
+5. Mostrar procesamiento.
+6. Mostrar dashboard y rankings.
+7. Mostrar auditoría de descuadres.
+8. Mostrar Excel final.
+9. Explicar trazabilidad y protección.
+10. Cerrar con beneficios y próximos pasos.
+
+Mensajes clave:
+
+- ReAS reduce trabajo manual repetitivo.
+- ReAS ayuda a estandarizar criterios.
+- ReAS mejora la trazabilidad del reporte.
+- ReAS facilita detectar casos críticos.
+- ReAS genera información para revisión humana, no sanciones automáticas.
+
+## 29. Recomendaciones de uso responsable
+
+- Verificar siempre el mes evaluado.
+- No procesar archivos de períodos mezclados sin seleccionar el mes correcto.
+- No entregar reportes con descuadres pendientes sin explicación.
+- No compartir archivos con datos sensibles fuera de canales autorizados.
+- Usar datos ficticios en capacitaciones o presentaciones abiertas.
+- Validar exclusiones por nómina cuando se cargue el archivo auxiliar.
+- Guardar evidencia del reporte final generado.
