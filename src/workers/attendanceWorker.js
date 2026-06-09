@@ -6,7 +6,7 @@ import {
   parseExtendedScheduleFiles,
 } from '../utils/extendedScheduleReader.js';
 import { parsePayrollWorkbook } from '../utils/payrollReader.js';
-import { validateColumnMapping } from '../utils/validationRules.js';
+import { validateColumnMapping, validateWorkbookData } from '../utils/validationRules.js';
 import { recalculateAuditAndSummaries } from '../utils/auditRules.js';
 
 let cachedRows = [];
@@ -63,6 +63,11 @@ self.onmessage = async (event) => {
       const selectedMonth = payload.selectedMonth ?? null;
       const rows = filterRowsByEvaluationMonth(payload.rows || cachedRows, payload.mapping, selectedMonth);
       post('progress', { value: 18, label: 'Validando columnas y filas' });
+      const workbookValidation = validateWorkbookData(rows, payload.mapping);
+      if (!workbookValidation.isValid) {
+        post('validation:error', workbookValidation);
+        return;
+      }
       post('progress', { value: 28, label: 'Detectando empleados con horario extendido' });
       const extendedSchedule = parseExtendedScheduleFiles(
         payload.extendedScheduleFiles ?? [],

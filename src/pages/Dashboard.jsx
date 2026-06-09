@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   BarChart3,
   CalendarDays,
+  CheckCircle2,
   FileCheck2,
   FilePlus2,
   FileText,
@@ -25,7 +26,12 @@ import UploadExcel from '../components/UploadExcel.jsx';
 import { scheduleConfig } from '../config/scheduleConfig.js';
 import { SESSION_TTL_HOURS, useAttendanceStore } from '../store/attendanceStore.js';
 import { applyAuditAdjustment, applyManualIrregularPunch } from '../utils/auditRules.js';
-import { validateColumnMapping } from '../utils/validationRules.js';
+import {
+  validateColumnMapping,
+  validateFileForUpload,
+  validateFilesForUpload,
+  validateWorkbookDataForMonth,
+} from '../utils/validationRules.js';
 
 function ProgressBar({ progress, status }) {
   if (!status) return null;
@@ -75,6 +81,82 @@ function TabButton({ icon: Icon, label, description, active, disabled, onClick }
   );
 }
 
+function ValidationSummaryPanel({ validation, fileWarnings = [] }) {
+  if (!validation && !fileWarnings.length) return null;
+
+  const errors = validation?.errors ?? [];
+  const warnings = [...fileWarnings, ...(validation?.warnings ?? [])];
+  const stats = validation?.stats;
+  const isValid = validation?.isValid ?? true;
+
+  return (
+    <section
+      className={`rounded-lg border p-4 shadow-sm ${
+        isValid
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
+          : 'border-rose-200 bg-rose-50 text-rose-950'
+      }`}
+    >
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <span
+            className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${
+              isValid ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+            }`}
+          >
+            {isValid ? <CheckCircle2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
+          </span>
+          <div>
+            <h2 className="text-sm font-semibold">
+              {isValid ? 'Archivo listo para procesar' : 'Archivo con errores críticos'}
+            </h2>
+            <p className="mt-1 text-sm">
+              {isValid
+                ? 'Columnas y datos principales validados. Revisa las advertencias antes de procesar.'
+                : 'Corrige los errores marcados antes de procesar la asistencia.'}
+            </p>
+          </div>
+        </div>
+        {stats ? (
+          <div className="grid gap-2 text-xs font-semibold sm:grid-cols-3 lg:min-w-[360px]">
+            <span className="rounded-md bg-white/70 px-3 py-2 ring-1 ring-black/5">
+              {stats.rowCount.toLocaleString('es-DO')} fila(s)
+            </span>
+            <span className="rounded-md bg-white/70 px-3 py-2 ring-1 ring-black/5">
+              {errors.length.toLocaleString('es-DO')} error(es)
+            </span>
+            <span className="rounded-md bg-white/70 px-3 py-2 ring-1 ring-black/5">
+              {warnings.length.toLocaleString('es-DO')} advertencia(s)
+            </span>
+          </div>
+        ) : null}
+      </div>
+
+      {errors.length ? (
+        <div className="mt-4 rounded-md border border-rose-200 bg-white/75 p-3">
+          <div className="text-xs font-semibold uppercase text-rose-700">Errores que bloquean</div>
+          <ul className="mt-2 space-y-1 text-sm">
+            {errors.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {warnings.length ? (
+        <div className="mt-4 rounded-md border border-amber-200 bg-white/75 p-3 text-amber-950">
+          <div className="text-xs font-semibold uppercase text-amber-700">Advertencias</div>
+          <ul className="mt-2 space-y-1 text-sm">
+            {warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export default function Dashboard() {
   const workerRef = useRef(null);
   const [primaryFile, setPrimaryFile] = useState(null);
@@ -84,6 +166,7 @@ export default function Dashboard() {
   const [selectedMonth, setSelectedMonth] = useState(null);
   const [result, setResult] = useState(null);
   const [errors, setErrors] = useState([]);
+  const [fileWarnings, setFileWarnings] = useState([]);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('');
   const [isBusy, setIsBusy] = useState(false);
@@ -111,6 +194,10 @@ export default function Dashboard() {
   } = useAttendanceStore();
 
   const mappingValidation = useMemo(() => validateColumnMapping(mapping), [mapping]);
+  const workbookValidation = useMemo(() => {
+    if (!preview.headers.length) return null;
+    return validateWorkbookDataForMonth(preview.rows, mapping, selectedMonth);
+  }, [mapping, preview.headers.length, preview.rows, selectedMonth]);
 
   useEffect(() => {
     const worker = new Worker(new URL('../workers/attendanceWorker.js', import.meta.url), {
@@ -134,6 +221,7 @@ export default function Dashboard() {
         setResult(null);
         setRestoredFromStorage(false);
         clearLastResult();
+        setFileWarnings([]);
         setErrors(payload.validation?.errors ?? []);
         setIsBusy(false);
         setStatus('');
@@ -155,6 +243,7 @@ export default function Dashboard() {
         setActiveTab('dashboard');
         setRestoredFromStorage(false);
         setErrors([]);
+        setFileWarnings([]);
         setIsBusy(false);
         setStatus('');
         try {
@@ -168,6 +257,7 @@ export default function Dashboard() {
 
       if (type === 'validation:error') {
         setErrors(payload.errors ?? ['Mapeo inválido.']);
+        setFileWarnings(payload.warnings ?? []);
         setIsBusy(false);
         setStatus('');
       }
@@ -207,6 +297,12 @@ export default function Dashboard() {
 
   async function handlePrimaryFile(file) {
     if (!file) return;
+    const fileValidation = validateFileForUpload(file, { required: true, label: 'Excel principal' });
+    setFileWarnings(fileValidation.warnings);
+    if (!fileValidation.isValid) {
+      setErrors(fileValidation.errors);
+      return;
+    }
     if (result && !window.confirm('Ya hay un reporte procesado. ¿Deseas cargar otro archivo y limpiar el resultado actual?')) {
       return;
     }
@@ -215,6 +311,7 @@ export default function Dashboard() {
     setRestoredFromStorage(false);
     clearLastResult();
     setErrors([]);
+    setFileWarnings(fileValidation.warnings);
     setRestoredFromStorage(false);
     setIsBusy(true);
     setProgress(0);
@@ -228,8 +325,14 @@ export default function Dashboard() {
       setErrors(mappingValidation.errors);
       return;
     }
+    if (workbookValidation && !workbookValidation.isValid) {
+      setErrors(workbookValidation.errors);
+      setFileWarnings(workbookValidation.warnings);
+      return;
+    }
 
     setErrors([]);
+    setFileWarnings(workbookValidation?.warnings ?? []);
     setIsBusy(true);
     setProgress(0);
     setStatus('Iniciando procesamiento');
@@ -273,6 +376,28 @@ export default function Dashboard() {
     }
   }
 
+  function handleSecondaryFiles(files) {
+    const validation = validateFilesForUpload(files, { label: 'Excel horario extendido' });
+    setFileWarnings(validation.warnings);
+    if (!validation.isValid) {
+      setErrors(validation.errors);
+      return;
+    }
+    setErrors([]);
+    setSecondaryFiles(files);
+  }
+
+  function handlePayrollFile(file) {
+    const validation = validateFileForUpload(file, { label: 'Excel nómina' });
+    setFileWarnings(validation.warnings);
+    if (!validation.isValid) {
+      setErrors(validation.errors);
+      return;
+    }
+    setErrors([]);
+    setPayrollFile(file);
+  }
+
   function handleAuditAdjustment(employeeAudit, bucket, options) {
     setResult((current) => {
       if (!current) return current;
@@ -313,6 +438,7 @@ export default function Dashboard() {
     setSelectedMonth(null);
     setResult(null);
     setErrors([]);
+    setFileWarnings([]);
     setProgress(0);
     setStatus('');
     setIsBusy(false);
@@ -564,11 +690,13 @@ export default function Dashboard() {
               payrollFile={payrollFile}
               disabled={isBusy}
               onPrimaryFile={handlePrimaryFile}
-              onSecondaryFiles={setSecondaryFiles}
-              onPayrollFile={setPayrollFile}
+              onSecondaryFiles={handleSecondaryFiles}
+              onPayrollFile={handlePayrollFile}
             />
 
             <ProgressBar progress={progress} status={status} />
+
+            <ValidationSummaryPanel validation={workbookValidation} fileWarnings={fileWarnings} />
 
             {preview.availableMonths?.length ? (
               <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70">
@@ -655,7 +783,7 @@ export default function Dashboard() {
                 <button
                   className="inline-flex h-11 items-center gap-2 rounded-md bg-slate-950 px-5 text-sm font-semibold text-white shadow-sm shadow-slate-900/10 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
                   type="button"
-                  disabled={isBusy || !mappingValidation.isValid}
+                  disabled={isBusy || !mappingValidation.isValid || (workbookValidation && !workbookValidation.isValid)}
                   onClick={processFile}
                 >
                   {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
