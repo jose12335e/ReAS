@@ -10,10 +10,9 @@ const REQUIRED_FIELDS = [
   'entrada',
   'salida',
   'observaciones',
-  'tiempoObservaciones',
 ];
 
-const OPTIONAL_FIELDS = ['departamento', 'tipoHorario'];
+const OPTIONAL_FIELDS = ['departamento', 'tiempoObservaciones', 'tipoHorario'];
 const ALLOWED_EXTENSIONS = ['.xlsx', '.xls', '.csv'];
 const WARNING_FILE_SIZE_MB = 30;
 const MAX_FILE_SIZE_MB = 75;
