@@ -149,6 +149,7 @@ export function parsePayrollWorkbook(arrayBuffer, fileName, evaluationMonth) {
     const position = clean(row?.[mapping.position]);
     const hierarchyPosition = clean(row?.[mapping.hierarchyPosition]);
     const excludedByPosition = isExcludedPosition(position, hierarchyPosition);
+    const excludedByHierarchyPosition = /\bDIRECCION\s+V\b/.test(normalizePosition(hierarchyPosition));
     const excludedByHireDate = isAfterEvaluationPeriod(hireDate, evaluationMonth);
     const record = {
       codigo: clean(row?.[mapping.code]),
@@ -159,6 +160,9 @@ export function parsePayrollWorkbook(arrayBuffer, fileName, evaluationMonth) {
       ubicacion: clean(row?.[mapping.location]),
       fechaIngreso: hireDate ? hireDate.toISOString().slice(0, 10) : clean(row?.[mapping.hireDate]),
       excluded: excludedByPosition || excludedByHireDate,
+      excludedByPosition,
+      excludedByHierarchyPosition,
+      excludedByHireDate,
       exclusionReason: [
         excludedByPosition ? 'Cargo/posición excluida por nómina' : '',
         excludedByHireDate ? 'Ingreso posterior al período evaluado' : '',

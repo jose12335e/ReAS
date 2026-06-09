@@ -366,6 +366,7 @@ export default function Dashboard({ activeUser, onLogout }) {
             modifiedSchedule,
             extendedScheduleFiles,
             payrollFile: payrollPayload,
+            primaryFileName: primaryFile?.name ?? '',
             selectedMonth,
           },
         },

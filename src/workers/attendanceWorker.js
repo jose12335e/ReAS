@@ -91,13 +91,16 @@ self.onmessage = async (event) => {
       const result = recalculateAuditAndSummaries(processedResult);
       post('progress', { value: 78, label: 'Construyendo resúmenes' });
       post('progress', { value: 100, label: 'Procesamiento completado' });
+      const availableMonths = detectAvailableMonths(cachedRows, payload.mapping);
       post('process:success', {
         ...result,
         metadata: {
           ...result.metadata,
+          sourceFileName: payload.primaryFileName ?? '',
           headers: cachedHeaders,
           sheetName: cachedSheetName,
-          availableMonths: detectAvailableMonths(cachedRows, payload.mapping),
+          availableMonths,
+          availableMonthCount: availableMonths.length,
           selectedMonth: selectedMonth ?? extendedSchedule.evaluationMonth,
           extendedSchedule,
           payroll: {

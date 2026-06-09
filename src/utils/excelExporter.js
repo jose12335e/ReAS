@@ -1455,7 +1455,7 @@ function addControlKeyValue(worksheet, rowNumber, label, value) {
   const labelCell = worksheet.getCell(rowNumber, 1);
   const valueCell = worksheet.getCell(rowNumber, 2);
   labelCell.value = label;
-  valueCell.value = value || 'No disponible';
+  valueCell.value = value === null || value === undefined || value === '' ? 'No disponible' : value;
   worksheet.mergeCells(rowNumber, 2, rowNumber, 4);
 
   labelCell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF334155' } };
@@ -1479,7 +1479,16 @@ async function addControlReportSheet(workbook, result, reportOptions = {}) {
   const metadata = result?.metadata ?? {};
   const audit = result?.audit;
   const warnings = metadata.warnings ?? [];
+  const payrollSummary = metadata.payrollExclusionSummary ?? {};
+  const availableMonths = metadata.availableMonths ?? [];
+  const extendedSchedule = metadata.extendedSchedule ?? {};
+  const payroll = metadata.payroll ?? {};
   const generatedAt = new Date();
+  const formatCount = (value, suffix = '') => {
+    const count = Number(value ?? 0);
+    return `${count.toLocaleString('es-DO')}${suffix}`;
+  };
+  const yesNo = (condition) => (condition ? 'Sí' : 'No');
 
   worksheet.columns = [
     { key: 'label', width: 30 },
@@ -1510,25 +1519,79 @@ async function addControlReportSheet(workbook, result, reportOptions = {}) {
   addControlKeyValue(worksheet, 9, 'Generado el', generatedAt.toLocaleString('es-DO'));
   addControlKeyValue(worksheet, 10, 'Código DGH', reportOptions.dghCode ?? DEFAULT_DGH_CODE);
   addControlKeyValue(worksheet, 11, 'Mes evaluado', metadata.selectedMonth?.label ?? 'No detectado');
+  addControlKeyValue(worksheet, 12, 'Archivo original', metadata.sourceFileName);
+  addControlKeyValue(worksheet, 13, 'Hoja del Excel usada', metadata.sheetName);
+  addControlKeyValue(worksheet, 14, 'Meses detectados', formatCount(metadata.availableMonthCount ?? availableMonths.length));
+  addControlKeyValue(
+    worksheet,
+    15,
+    'Meses disponibles',
+    availableMonths.map((month) => month.label ?? month.key).filter(Boolean).join(', '),
+  );
 
-  addControlSectionTitle(worksheet, 13, 'Usuario');
-  addControlKeyValue(worksheet, 14, 'Generado por', generatedBy?.name);
-  addControlKeyValue(worksheet, 15, 'Código empleado', generatedBy?.code);
-  addControlKeyValue(worksheet, 16, 'Cargo', generatedBy?.role);
-  addControlKeyValue(worksheet, 17, 'Unidad', generatedBy?.unit);
+  addControlSectionTitle(worksheet, 17, 'Usuario');
+  addControlKeyValue(worksheet, 18, 'Generado por', generatedBy?.name);
+  addControlKeyValue(worksheet, 19, 'Código empleado', generatedBy?.code);
+  addControlKeyValue(worksheet, 20, 'Cargo', generatedBy?.role);
+  addControlKeyValue(worksheet, 21, 'Unidad', generatedBy?.unit);
 
-  addControlSectionTitle(worksheet, 19, 'Resumen técnico');
-  addControlKeyValue(worksheet, 20, 'Registros procesados', metadata.processedRows?.toLocaleString('es-DO'));
-  addControlKeyValue(worksheet, 21, 'Empleados analizados', (result?.summaryByEmployee?.length ?? 0).toLocaleString('es-DO'));
-  addControlKeyValue(worksheet, 22, 'Estado de auditoría', audit?.general?.estadoCuadre ?? 'No disponible');
-  addControlKeyValue(worksheet, 23, 'Diferencia total', audit?.general?.diferencia ?? 'No disponible');
-  addControlKeyValue(worksheet, 24, 'Empleados con descuadre', audit?.general?.empleadosConDescuadre?.toLocaleString('es-DO'));
+  addControlSectionTitle(worksheet, 23, 'Resumen técnico');
+  addControlKeyValue(worksheet, 24, 'Registros procesados', metadata.processedRows?.toLocaleString('es-DO'));
+  addControlKeyValue(worksheet, 25, 'Empleados analizados', (result?.summaryByEmployee?.length ?? 0).toLocaleString('es-DO'));
+  addControlKeyValue(worksheet, 26, 'Estado de auditoría', audit?.general?.estadoCuadre ?? 'No disponible');
+  addControlKeyValue(worksheet, 27, 'Diferencia total', audit?.general?.diferencia ?? 'No disponible');
+  addControlKeyValue(worksheet, 28, 'Empleados con descuadre', audit?.general?.empleadosConDescuadre?.toLocaleString('es-DO'));
+  addControlKeyValue(
+    worksheet,
+    29,
+    'Nómina utilizada',
+    payroll.fileName ? `Sí - ${payroll.fileName}` : 'No',
+  );
+  addControlKeyValue(worksheet, 30, 'Hoja de nómina usada', payroll.sheetName);
+  addControlKeyValue(
+    worksheet,
+    31,
+    'Horario extendido utilizado',
+    yesNo((extendedSchedule.files?.length ?? 0) > 0 || (extendedSchedule.extendedEmployeeCodes?.length ?? 0) > 0),
+  );
+  addControlKeyValue(
+    worksheet,
+    32,
+    'Empleados HE detectados',
+    formatCount(extendedSchedule.extendedEmployeeCodes?.length),
+  );
+  addControlKeyValue(
+    worksheet,
+    33,
+    'Exclusiones por nómina',
+    formatCount(metadata.excludedRowsByPayroll ?? payrollSummary.totalRows, ' fila(s)'),
+  );
+  addControlKeyValue(
+    worksheet,
+    34,
+    'Directores/Subdirectores/DIRECCION V',
+    formatCount(payrollSummary.byPositionRows, ' fila(s)'),
+  );
+  addControlKeyValue(
+    worksheet,
+    35,
+    'De esas, DIRECCION V',
+    formatCount(payrollSummary.byHierarchyPositionRows, ' fila(s)'),
+  );
+  addControlKeyValue(
+    worksheet,
+    36,
+    'Ingreso posterior al mes',
+    formatCount(payrollSummary.byHireDateRows, ' fila(s)'),
+  );
 
-  addControlSectionTitle(worksheet, 26, 'Advertencias del procesamiento');
+  const warningTitleRow = 38;
+  const warningStartRow = warningTitleRow + 1;
+  addControlSectionTitle(worksheet, warningTitleRow, 'Advertencias del procesamiento');
   if (warnings.length) {
     warnings.slice(0, 20).forEach((warning, index) => {
-      worksheet.mergeCells(27 + index, 1, 27 + index, 4);
-      const cell = worksheet.getCell(27 + index, 1);
+      worksheet.mergeCells(warningStartRow + index, 1, warningStartRow + index, 4);
+      const cell = worksheet.getCell(warningStartRow + index, 1);
       cell.value = warning;
       cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF78350F' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } };
@@ -1536,8 +1599,8 @@ async function addControlReportSheet(workbook, result, reportOptions = {}) {
       applyBorder(cell, 'FFFCD34D');
     });
   } else {
-    worksheet.mergeCells('A27:D27');
-    const cell = worksheet.getCell('A27');
+    worksheet.mergeCells(warningStartRow, 1, warningStartRow, 4);
+    const cell = worksheet.getCell(warningStartRow, 1);
     cell.value = 'Sin advertencias registradas.';
     cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF065F46' } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };

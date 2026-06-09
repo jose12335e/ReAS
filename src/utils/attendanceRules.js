@@ -521,6 +521,12 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
   const schedules = new Map();
   const processedRows = [];
   let excludedRowsByPayroll = 0;
+  const payrollExclusionSummary = {
+    totalRows: 0,
+    byPositionRows: 0,
+    byHierarchyPositionRows: 0,
+    byHireDateRows: 0,
+  };
   const events = {
     tardanzas: [],
     salidasTempranas: [],
@@ -535,6 +541,10 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
     const payrollRecord = findPayrollRecord(payrollEmployeesByCode, rawCode);
     if (payrollRecord?.excluded) {
       excludedRowsByPayroll += 1;
+      payrollExclusionSummary.totalRows += 1;
+      if (payrollRecord.excludedByPosition) payrollExclusionSummary.byPositionRows += 1;
+      if (payrollRecord.excludedByHierarchyPosition) payrollExclusionSummary.byHierarchyPositionRows += 1;
+      if (payrollRecord.excludedByHireDate) payrollExclusionSummary.byHireDateRows += 1;
       processedRows.push({
         '#': index + 1,
         NOMBRE: payrollRecord.nombre || clean(asValue(rawRow, mapping, 'nombre')),
@@ -667,6 +677,7 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
       totalRows: rows.length,
       processedRows: processedRows.length,
       excludedRowsByPayroll,
+      payrollExclusionSummary,
       generatedAt: new Date().toISOString(),
     },
   };
