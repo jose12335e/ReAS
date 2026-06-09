@@ -8,9 +8,11 @@ import {
   FileText,
   HardDrive,
   Loader2,
+  LogOut,
   Play,
   Settings,
   ShieldCheck,
+  UserCheck,
   UploadCloud,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -157,7 +159,7 @@ function ValidationSummaryPanel({ validation, fileWarnings = [] }) {
   );
 }
 
-export default function Dashboard() {
+export default function Dashboard({ activeUser, onLogout }) {
   const workerRef = useRef(null);
   const [primaryFile, setPrimaryFile] = useState(null);
   const [secondaryFiles, setSecondaryFiles] = useState([]);
@@ -565,6 +567,32 @@ export default function Dashboard() {
             </div>
 
             <div className="grid w-full gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3 xl:w-[680px]">
+              {activeUser ? (
+                <div className="rounded-md border border-teal-100 bg-white p-3 sm:col-span-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex gap-3">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-teal-50 text-teal-700">
+                        <UserCheck className="h-5 w-5" />
+                      </span>
+                      <div>
+                        <div className="text-xs font-semibold uppercase text-slate-500">Sesion activa</div>
+                        <div className="mt-1 text-sm font-semibold text-slate-950">{activeUser.name}</div>
+                        <div className="mt-0.5 text-xs font-medium text-slate-600">
+                          {activeUser.role} · {activeUser.code}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                      type="button"
+                      onClick={onLogout}
+                    >
+                      <LogOut className="h-3.5 w-3.5" />
+                      Cerrar sesión
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <label className="grid gap-1.5">
                 <span className="text-xs font-semibold uppercase text-slate-500">
                   Horario base
@@ -828,7 +856,7 @@ export default function Dashboard() {
             result={result}
             disabled={isBusy}
             hasPendingAudit={hasPendingAudit}
-            reportOptions={{ dghCode }}
+            reportOptions={{ dghCode, generatedBy: activeUser }}
             filename={exportFilename}
           />
         ) : null}

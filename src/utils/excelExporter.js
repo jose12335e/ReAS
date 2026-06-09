@@ -1414,8 +1414,26 @@ function addTemplateSheets(workbook, result, reportOptions = {}) {
 
 export async function exportAttendanceReport(result, reportOptions = {}) {
   const workbook = new ExcelJS.Workbook();
+  const generatedBy = reportOptions.generatedBy;
+  const userLabel = generatedBy
+    ? `${generatedBy.name} (${generatedBy.code}) - ${generatedBy.role}`
+    : 'ReAS';
   workbook.creator = 'ReAS';
+  workbook.lastModifiedBy = userLabel;
+  workbook.subject = `Reporte de asistencia ${reportOptions.dghCode ?? DEFAULT_DGH_CODE}`;
+  workbook.keywords = [
+    'ReAS',
+    'reporte de asistencia',
+    reportOptions.dghCode ?? DEFAULT_DGH_CODE,
+    result?.metadata?.selectedMonth?.label,
+    generatedBy?.name,
+    generatedBy?.role,
+  ].filter(Boolean).join('; ');
+  workbook.description = generatedBy
+    ? `Generado por ${generatedBy.name}, ${generatedBy.role}, codigo ${generatedBy.code}.`
+    : 'Generado por ReAS.';
   workbook.created = new Date();
+  workbook.modified = new Date();
 
   const reportData = buildReportWorkbookData(result);
   reportData.sheets.forEach((sheet) => addRowsToWorksheet(workbook, sheet.name, sheet.rows));
