@@ -864,6 +864,35 @@ function applyTemplateSheetDefaults(worksheet) {
   });
 }
 
+async function protectEditableWorksheet(worksheet) {
+  worksheet.eachRow((row) => {
+    row.eachCell({ includeEmpty: true }, (cell) => {
+      cell.protection = { locked: false };
+    });
+  });
+
+  await worksheet.protect('', {
+    selectLockedCells: true,
+    selectUnlockedCells: true,
+    formatCells: false,
+    formatColumns: false,
+    formatRows: false,
+    insertRows: false,
+    insertColumns: false,
+    deleteRows: false,
+    deleteColumns: false,
+    sort: true,
+    autoFilter: true,
+    pivotTables: false,
+    spinCount: 1000,
+  });
+}
+
+async function protectEditableReportSheets(workbook) {
+  const worksheets = workbook.worksheets.filter((worksheet) => worksheet.name !== CONTROL_SHEET_NAME);
+  await Promise.all(worksheets.map((worksheet) => protectEditableWorksheet(worksheet)));
+}
+
 function addSimpleListSheet(workbook, config, reportOptions = {}) {
   const worksheet = workbook.addWorksheet(normalizeWorksheetName(config.sheetName));
   setColumns(worksheet, config.widths);
@@ -1670,9 +1699,10 @@ export async function exportAttendanceReport(result, reportOptions = {}) {
   workbook.modified = new Date();
 
   await addControlReportSheet(workbook, result, reportOptions);
+  addTemplateSheets(workbook, result, reportOptions);
   const reportData = buildReportWorkbookData(result);
   reportData.sheets.forEach((sheet) => addRowsToWorksheet(workbook, sheet.name, sheet.rows));
-  addTemplateSheets(workbook, result, reportOptions);
+  await protectEditableReportSheets(workbook);
 
   const buffer = await workbook.xlsx.writeBuffer();
   return addInstitutionalHeaderFooterImages(buffer);
