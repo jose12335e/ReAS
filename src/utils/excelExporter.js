@@ -33,6 +33,8 @@ const TEMPLATE_COLORS = {
 const TIME_FORMAT = '[h]:mm:ss';
 const PAPER_SIZE_LETTER = 1;
 const DEFAULT_DGH_CODE = 'JCE-DGH-6064-2026';
+const CONTROL_SHEET_NAME = 'Control del reporte';
+const CONTROL_SHEET_PASSWORD = 'ReAS-Control-2026';
 const INSTITUTIONAL_FOOTER =
   '&L&G&R&"Aptos,Regular"&10Av. Gregorio Luperón esq. Av. 27 de Febrero,\n' +
   'Plaza de la Bandera, Santo Domingo, D. N.\n' +
@@ -224,6 +226,30 @@ function normalizePrintAreaDefinedNames(workbookXml) {
   );
 }
 
+function protectWorkbookStructureXml(workbookXml) {
+  const protection = '<workbookProtection lockStructure="1" lockWindows="1"/>';
+  if (workbookXml.includes('<workbookProtection')) {
+    return workbookXml.replace(
+      /<workbookProtection[^>]*\/>/,
+      (match) =>
+        match
+          .replace(/\slockStructure="[^"]*"/, '')
+          .replace(/\slockWindows="[^"]*"/, '')
+          .replace('/>', ' lockStructure="1" lockWindows="1"/>'),
+    );
+  }
+
+  if (workbookXml.includes('<bookViews>')) {
+    return workbookXml.replace('<bookViews>', `${protection}<bookViews>`);
+  }
+
+  if (workbookXml.includes('<workbookPr')) {
+    return workbookXml.replace(/(<workbookPr[^>]*\/>)/, `$1${protection}`);
+  }
+
+  return workbookXml.replace(/(<workbook[^>]*>)/, `$1${protection}`);
+}
+
 function ensureWorksheetRelationshipNamespace(sheetXml) {
   if (sheetXml.includes('xmlns:r=')) return sheetXml;
   return sheetXml.replace(
@@ -300,7 +326,9 @@ async function addInstitutionalHeaderFooterImages(buffer) {
   const zip = await JSZip.loadAsync(buffer);
   const workbookPath = 'xl/workbook.xml';
   const workbookXml = await zip.file(workbookPath)?.async('string');
-  if (workbookXml) zip.file(workbookPath, normalizePrintAreaDefinedNames(workbookXml));
+  if (workbookXml) {
+    zip.file(workbookPath, protectWorkbookStructureXml(normalizePrintAreaDefinedNames(workbookXml)));
+  }
 
   const worksheetPaths = Object.keys(zip.files)
     .filter((path) => /^xl\/worksheets\/sheet\d+\.xml$/.test(path))
@@ -1412,6 +1440,149 @@ function addTemplateSheets(workbook, result, reportOptions = {}) {
   );
 }
 
+function addControlSectionTitle(worksheet, rowNumber, title) {
+  worksheet.mergeCells(rowNumber, 1, rowNumber, 4);
+  const cell = worksheet.getCell(rowNumber, 1);
+  cell.value = title;
+  cell.font = { name: 'Aptos', size: 12, bold: true, color: { argb: TEMPLATE_COLORS.white } };
+  cell.fill = HEADER_FILL;
+  cell.alignment = { vertical: 'middle', horizontal: 'left' };
+  applyBorder(cell, TEMPLATE_COLORS.black);
+  worksheet.getRow(rowNumber).height = 22;
+}
+
+function addControlKeyValue(worksheet, rowNumber, label, value) {
+  const labelCell = worksheet.getCell(rowNumber, 1);
+  const valueCell = worksheet.getCell(rowNumber, 2);
+  labelCell.value = label;
+  valueCell.value = value || 'No disponible';
+  worksheet.mergeCells(rowNumber, 2, rowNumber, 4);
+
+  labelCell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF334155' } };
+  valueCell.font = { name: 'Aptos', size: 10, color: { argb: TEMPLATE_COLORS.black } };
+  labelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+  valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEMPLATE_COLORS.white } };
+
+  for (let col = 1; col <= 4; col += 1) {
+    const cell = worksheet.getCell(rowNumber, col);
+    applyBorder(cell, 'FFCBD5E1');
+    cell.alignment = { vertical: 'middle', horizontal: col === 1 ? 'left' : 'left', wrapText: true };
+  }
+}
+
+async function addControlReportSheet(workbook, result, reportOptions = {}) {
+  const worksheet = workbook.addWorksheet(CONTROL_SHEET_NAME, {
+    views: [{ showGridLines: false }],
+    properties: { tabColor: { argb: 'FF0F172A' } },
+  });
+  const generatedBy = reportOptions.generatedBy;
+  const metadata = result?.metadata ?? {};
+  const audit = result?.audit;
+  const warnings = metadata.warnings ?? [];
+  const generatedAt = new Date();
+
+  worksheet.columns = [
+    { key: 'label', width: 30 },
+    { key: 'value1', width: 36 },
+    { key: 'value2', width: 26 },
+    { key: 'value3', width: 26 },
+  ];
+
+  worksheet.mergeCells('A1:D1');
+  worksheet.getCell('A1').value = 'CONTROL DEL REPORTE';
+  worksheet.getCell('A1').font = { name: 'Aptos', size: 18, bold: true, color: { argb: TEMPLATE_COLORS.white } };
+  worksheet.getCell('A1').fill = HEADER_FILL;
+  worksheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'center' };
+  worksheet.getRow(1).height = 30;
+
+  worksheet.mergeCells('A3:D5');
+  const confidentialityCell = worksheet.getCell('A3');
+  confidentialityCell.value =
+    'Documento confidencial para uso exclusivo de la Dirección de Gestión Humana. ' +
+    'Su distribución, modificación o reproducción debe estar autorizada por el área responsable.';
+  confidentialityCell.font = { name: 'Aptos', size: 11, bold: true, color: { argb: 'FF7F1D1D' } };
+  confidentialityCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE4E6' } };
+  confidentialityCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  applyBorder(confidentialityCell, 'FFFCA5A5');
+
+  addControlSectionTitle(worksheet, 7, 'Trazabilidad');
+  addControlKeyValue(worksheet, 8, 'Sistema', 'ReAS');
+  addControlKeyValue(worksheet, 9, 'Generado el', generatedAt.toLocaleString('es-DO'));
+  addControlKeyValue(worksheet, 10, 'Código DGH', reportOptions.dghCode ?? DEFAULT_DGH_CODE);
+  addControlKeyValue(worksheet, 11, 'Mes evaluado', metadata.selectedMonth?.label ?? 'No detectado');
+
+  addControlSectionTitle(worksheet, 13, 'Usuario');
+  addControlKeyValue(worksheet, 14, 'Generado por', generatedBy?.name);
+  addControlKeyValue(worksheet, 15, 'Código empleado', generatedBy?.code);
+  addControlKeyValue(worksheet, 16, 'Cargo', generatedBy?.role);
+  addControlKeyValue(worksheet, 17, 'Unidad', generatedBy?.unit);
+
+  addControlSectionTitle(worksheet, 19, 'Resumen técnico');
+  addControlKeyValue(worksheet, 20, 'Registros procesados', metadata.processedRows?.toLocaleString('es-DO'));
+  addControlKeyValue(worksheet, 21, 'Empleados analizados', (result?.summaryByEmployee?.length ?? 0).toLocaleString('es-DO'));
+  addControlKeyValue(worksheet, 22, 'Estado de auditoría', audit?.general?.estadoCuadre ?? 'No disponible');
+  addControlKeyValue(worksheet, 23, 'Diferencia total', audit?.general?.diferencia ?? 'No disponible');
+  addControlKeyValue(worksheet, 24, 'Empleados con descuadre', audit?.general?.empleadosConDescuadre?.toLocaleString('es-DO'));
+
+  addControlSectionTitle(worksheet, 26, 'Advertencias del procesamiento');
+  if (warnings.length) {
+    warnings.slice(0, 20).forEach((warning, index) => {
+      worksheet.mergeCells(27 + index, 1, 27 + index, 4);
+      const cell = worksheet.getCell(27 + index, 1);
+      cell.value = warning;
+      cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF78350F' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+      applyBorder(cell, 'FFFCD34D');
+    });
+  } else {
+    worksheet.mergeCells('A27:D27');
+    const cell = worksheet.getCell('A27');
+    cell.value = 'Sin advertencias registradas.';
+    cell.font = { name: 'Aptos', size: 10, color: { argb: 'FF065F46' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
+    cell.alignment = { vertical: 'middle', horizontal: 'left' };
+    applyBorder(cell, 'FF6EE7B7');
+  }
+
+  worksheet.eachRow((row) => {
+    row.eachCell((cell) => {
+      cell.protection = { locked: true };
+    });
+  });
+  worksheet.pageSetup = {
+    paperSize: PAPER_SIZE_LETTER,
+    orientation: 'portrait',
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 1,
+    margins: {
+      top: 0.7,
+      left: 0.5,
+      bottom: 0.7,
+      right: 0.5,
+      header: 0.3,
+      footer: 0.3,
+    },
+  };
+
+  await worksheet.protect(CONTROL_SHEET_PASSWORD, {
+    selectLockedCells: true,
+    selectUnlockedCells: false,
+    formatCells: false,
+    formatColumns: false,
+    formatRows: false,
+    insertRows: false,
+    insertColumns: false,
+    deleteRows: false,
+    deleteColumns: false,
+    sort: false,
+    autoFilter: false,
+    pivotTables: false,
+    spinCount: 1000,
+  });
+}
+
 export async function exportAttendanceReport(result, reportOptions = {}) {
   const workbook = new ExcelJS.Workbook();
   const generatedBy = reportOptions.generatedBy;
@@ -1435,6 +1606,7 @@ export async function exportAttendanceReport(result, reportOptions = {}) {
   workbook.created = new Date();
   workbook.modified = new Date();
 
+  await addControlReportSheet(workbook, result, reportOptions);
   const reportData = buildReportWorkbookData(result);
   reportData.sheets.forEach((sheet) => addRowsToWorksheet(workbook, sheet.name, sheet.rows));
   addTemplateSheets(workbook, result, reportOptions);
