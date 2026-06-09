@@ -539,6 +539,65 @@ function setColumns(worksheet, widths) {
   worksheet.columns = widths.map((width) => ({ width }));
 }
 
+function cellTextForAutoFit(cell) {
+  const value = cell.value;
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value.toLocaleDateString('es-DO');
+  if (typeof value !== 'object') return String(value);
+  if (value.richText) return value.richText.map((item) => item.text ?? '').join('');
+  if (value.text) return String(value.text);
+  if (value.result !== undefined && value.result !== null) return String(value.result);
+  if (value.formula) return String(value.formula);
+  return '';
+}
+
+function autoFitWorksheetColumns(worksheet) {
+  const columnCount = worksheet.columnCount;
+  for (let columnNumber = 1; columnNumber <= columnCount; columnNumber += 1) {
+    const column = worksheet.getColumn(columnNumber);
+    const currentWidth = Number(column.width || 10);
+    let maxLength = 0;
+
+    column.eachCell({ includeEmpty: false }, (cell) => {
+      if (cell.isMerged) return;
+      const cellText = cellTextForAutoFit(cell);
+      const longestLine = cellText
+        .split(/\r?\n/)
+        .reduce((max, line) => Math.max(max, line.trim().length), 0);
+      maxLength = Math.max(maxLength, longestLine);
+    });
+
+    const fittedWidth = Math.min(Math.max(maxLength + 2, currentWidth, 10), 58);
+    column.width = fittedWidth;
+  }
+}
+
+function autoFitWorksheetRows(worksheet) {
+  worksheet.eachRow((row) => {
+    let lineCount = 1;
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      if (cell.isMerged) return;
+      const cellText = cellTextForAutoFit(cell);
+      if (!cellText) return;
+      const width = Math.max(Number(worksheet.getColumn(cell.col).width || 10) - 2, 8);
+      const textLines = cellText
+        .split(/\r?\n/)
+        .reduce((total, line) => total + Math.max(1, Math.ceil(line.trim().length / width)), 0);
+      lineCount = Math.max(lineCount, textLines);
+    });
+
+    const fittedHeight = Math.min(Math.max(18, lineCount * 15), 96);
+    row.height = Math.max(Number(row.height || 0), fittedHeight);
+  });
+}
+
+function autoFitWorkbookTables(workbook) {
+  workbook.worksheets.forEach((worksheet) => {
+    autoFitWorksheetColumns(worksheet);
+    autoFitWorksheetRows(worksheet);
+  });
+}
+
 function employeeName(employee) {
   return [employee.codigo, employee.nombre].filter(Boolean).join(' - ');
 }
@@ -1702,6 +1761,7 @@ export async function exportAttendanceReport(result, reportOptions = {}) {
   addTemplateSheets(workbook, result, reportOptions);
   const reportData = buildReportWorkbookData(result);
   reportData.sheets.forEach((sheet) => addRowsToWorksheet(workbook, sheet.name, sheet.rows));
+  autoFitWorkbookTables(workbook);
   await protectEditableReportSheets(workbook);
 
   const buffer = await workbook.xlsx.writeBuffer();
