@@ -5,6 +5,7 @@ import {
   FileCheck2,
   FilePlus2,
   FileText,
+  HardDrive,
   Loader2,
   Play,
   Settings,
@@ -22,7 +23,7 @@ import ResultsExplorer from '../components/ResultsExplorer.jsx';
 import RulesPanel from '../components/RulesPanel.jsx';
 import UploadExcel from '../components/UploadExcel.jsx';
 import { scheduleConfig } from '../config/scheduleConfig.js';
-import { useAttendanceStore } from '../store/attendanceStore.js';
+import { SESSION_TTL_HOURS, useAttendanceStore } from '../store/attendanceStore.js';
 import { applyAuditAdjustment, applyManualIrregularPunch } from '../utils/auditRules.js';
 import { validateColumnMapping } from '../utils/validationRules.js';
 
@@ -94,6 +95,7 @@ export default function Dashboard() {
     modifiedSchedule,
     dghCode,
     exportFilename,
+    saveSession,
     mapping,
     lastResult,
     lastSession,
@@ -101,9 +103,11 @@ export default function Dashboard() {
     setModifiedSchedule,
     setDghCode,
     setExportFilename,
+    setSaveSession,
     setMapping,
     setLastResult,
     clearLastResult,
+    clearExpiredSession,
   } = useAttendanceStore();
 
   const mappingValidation = useMemo(() => validateColumnMapping(mapping), [mapping]);
@@ -179,11 +183,15 @@ export default function Dashboard() {
   }, [clearLastResult, setLastResult, setMapping]);
 
   useEffect(() => {
-    if (!result && lastResult) {
+    clearExpiredSession();
+  }, [clearExpiredSession]);
+
+  useEffect(() => {
+    if (saveSession && !result && lastResult) {
       setResult(lastResult);
       setRestoredFromStorage(true);
     }
-  }, [lastResult, result]);
+  }, [lastResult, result, saveSession]);
 
   useEffect(() => {
     const allowedWithoutResult = ['dashboard', 'upload', 'rules'];
@@ -313,6 +321,20 @@ export default function Dashboard() {
     setActiveTab('upload');
   }
 
+  function handleSaveSessionChange(nextValue) {
+    if (
+      !nextValue &&
+      lastResult &&
+      !window.confirm('Desactivar Guardar sesión borrará la copia guardada en localStorage. El reporte abierto seguirá en pantalla hasta que cierres o limpies. ¿Deseas continuar?')
+    ) {
+      return;
+    }
+    setSaveSession(nextValue);
+    if (!nextValue) {
+      setRestoredFromStorage(false);
+    }
+  }
+
   const hasPendingAudit = Boolean(result?.audit?.hasDiscrepancies);
   const tabs = [
     {
@@ -396,7 +418,22 @@ export default function Dashboard() {
                   onClick={handleNewReport}
                 >
                   <FilePlus2 className="h-3.5 w-3.5" />
-                  Nuevo reporte
+                  Nuevo / limpiar sesión
+                </button>
+                <button
+                  className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    saveSession
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                  type="button"
+                  role="switch"
+                  aria-checked={saveSession}
+                  disabled={isBusy}
+                  onClick={() => handleSaveSessionChange(!saveSession)}
+                >
+                  <HardDrive className="h-3.5 w-3.5" />
+                  {saveSession ? 'Guardando sesión' : 'No guardar sesión'}
                 </button>
               </div>
             </div>
@@ -458,6 +495,30 @@ export default function Dashboard() {
             </div>
           </div>
         </header>
+
+        <section
+          className={`rounded-lg border p-4 text-sm shadow-sm ${
+            saveSession
+              ? 'border-amber-200 bg-amber-50 text-amber-950'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-950'
+          }`}
+        >
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-start gap-2">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                {saveSession
+                  ? `Privacidad: este equipo conserva la última sesión por ${SESSION_TTL_HOURS} horas. Usa “Nuevo / limpiar sesión” al terminar si el equipo es compartido.`
+                  : 'Privacidad: el reporte actual no se guardará en localStorage. Si recargas o cierras la página, tendrás que procesarlo de nuevo.'}
+              </span>
+            </div>
+            {lastSession?.savedAt && saveSession ? (
+              <span className="text-xs font-semibold">
+                Sesión guardada: {new Date(lastSession.savedAt).toLocaleString('es-DO')}
+              </span>
+            ) : null}
+          </div>
+        </section>
 
         <nav className="grid gap-3 md:grid-cols-2 xl:grid-cols-6" aria-label="Secciones del sistema">
           {tabs.map((tab) => (
