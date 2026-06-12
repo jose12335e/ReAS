@@ -8,6 +8,10 @@ import {
 import { parsePayrollWorkbook } from '../utils/payrollReader.js';
 import { validateColumnMapping, validateWorkbookData } from '../utils/validationRules.js';
 import { recalculateAuditAndSummaries } from '../utils/auditRules.js';
+import {
+  buildEventualityReconciliation,
+  parseEventualitiesWorkbook,
+} from '../utils/eventualitiesReader.js';
 
 let cachedRows = [];
 let cachedHeaders = [];
@@ -81,14 +85,28 @@ self.onmessage = async (event) => {
         payload.payrollFile?.name,
         extendedSchedule.evaluationMonth,
       );
-      post('progress', { value: 42, label: 'Aplicando reglas de asistencia' });
+      post('progress', { value: 39, label: 'Cruzando Excel de eventualidades' });
+      const eventualities = parseEventualitiesWorkbook(
+        payload.eventualitiesFile?.arrayBuffer,
+        payload.eventualitiesFile?.name,
+        selectedMonth ?? extendedSchedule.evaluationMonth,
+      );
+      post('progress', { value: 46, label: 'Aplicando reglas de asistencia' });
       const processedResult = processAttendanceRows(rows, payload.mapping, {
         defaultScheduleType: payload.defaultScheduleType,
         modifiedSchedule: payload.modifiedSchedule,
         extendedEmployeeCodes: extendedSchedule.extendedEmployeeCodes,
         payrollEmployeesByCode: payroll.employeesByCode,
+        eventualitiesByCodeDate: eventualities.recordsByCodeDate,
       });
-      const result = recalculateAuditAndSummaries(processedResult);
+      const eventualityAudit = buildEventualityReconciliation(
+        eventualities,
+        processedResult.processedRows,
+      );
+      const result = recalculateAuditAndSummaries({
+        ...processedResult,
+        eventualityAudit,
+      });
       post('progress', { value: 78, label: 'Construyendo resúmenes' });
       post('progress', { value: 100, label: 'Procesamiento completado' });
       const availableMonths = detectAvailableMonths(cachedRows, payload.mapping);
@@ -110,7 +128,17 @@ self.onmessage = async (event) => {
             employeesDetected: payroll.employeesDetected,
             mapping: payroll.mapping,
           },
-          warnings: [...extendedSchedule.warnings, ...payroll.warnings],
+          eventualities: {
+            enabled: eventualities.enabled,
+            fileName: eventualities.fileName,
+            sheets: eventualities.sheets,
+            stats: eventualities.stats,
+          },
+          warnings: [
+            ...extendedSchedule.warnings,
+            ...payroll.warnings,
+            ...eventualities.warnings,
+          ],
         },
       });
       return;

@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ArrowRightLeft,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -81,6 +82,122 @@ function AdjustmentButton({ children, disabled, onClick, tone = 'teal' }) {
     >
       {children}
     </button>
+  );
+}
+
+function EventualityReconciliation({ reconciliation, disabled, onResolve }) {
+  const [showAll, setShowAll] = useState(false);
+  if (!reconciliation?.enabled) return null;
+
+  const pending = reconciliation.pendingItems ?? [];
+  const visibleItems = showAll ? pending : pending.slice(0, 20);
+  const statusStyles = {
+    tipo_no_reconocido: 'border-rose-300 bg-rose-50 text-rose-800',
+    tipo_diferente: 'border-rose-300 bg-rose-50 text-rose-800',
+    solo_eventualidades: 'border-violet-300 bg-violet-50 text-violet-900',
+    solo_asistencia: 'border-amber-300 bg-amber-50 text-amber-900',
+    requiere_confirmacion: 'border-orange-300 bg-orange-50 text-orange-900',
+  };
+
+  return (
+    <div className="mt-4 rounded-xl border-2 border-violet-200 bg-violet-50/40 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="grid h-9 w-9 place-items-center rounded-lg bg-violet-700 text-white">
+              <ArrowRightLeft className="h-5 w-5" />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-950">
+                Prioridad 1: conciliación de eventualidades
+              </h3>
+              <p className="mt-0.5 text-xs text-slate-600">
+                Compara código, fecha y tipo entre asistencia y el Excel de eventualidades.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+          <MetricPill label="Confirmadas" value={reconciliation.stats?.confirmed ?? 0} tone="green" />
+          <MetricPill label="Pendientes" value={reconciliation.stats?.pending ?? 0} tone="rose" />
+          <MetricPill label="Tipo diferente" value={reconciliation.stats?.differentType ?? 0} tone="amber" />
+          <MetricPill label="Con -1" value={reconciliation.stats?.pendingTime ?? 0} tone="amber" />
+        </div>
+      </div>
+
+      {pending.length ? (
+        <>
+          <div className="mt-4 flex items-start gap-2 rounded-lg border border-violet-200 bg-white p-3 text-sm text-violet-950">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" />
+            <span>
+              Estos casos se presentan primero porque una fuente no confirma a la otra. El Excel de eventualidades
+              tiene prioridad para clasificar; revisa la diferencia y luego valida el cuadre de horas.
+            </span>
+          </div>
+          <div className="mt-3 grid gap-3">
+            {visibleItems.map((item) => (
+              <article
+                key={item.id}
+                className={`rounded-lg border p-3 ${statusStyles[item.status] ?? 'border-slate-200 bg-white text-slate-800'}`}
+              >
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold">{item.nombre || 'Empleado sin nombre'}</span>
+                      <span className="rounded bg-white/80 px-2 py-0.5 text-xs font-semibold ring-1 ring-black/10">
+                        {item.codigo}
+                      </span>
+                      <span className="rounded bg-white/80 px-2 py-0.5 text-xs font-semibold ring-1 ring-black/10">
+                        {item.fecha}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm font-medium">{item.reason}</p>
+                    <div className="mt-2 grid gap-x-5 gap-y-1 text-xs sm:grid-cols-2 xl:grid-cols-4">
+                      <span><b>En eventualidades:</b> {item.tipoExternoLabel}</span>
+                      <span><b>En asistencia:</b> {item.tiposAsistenciaLabel}</span>
+                      <span><b>Cantidad días:</b> {item.cantidadDias ?? 'vacío'}</span>
+                      <span><b>Cantidad horas:</b> {item.cantidadHoras ?? 'vacío'}</span>
+                      <span><b>Ubicación:</b> {item.ubicacion || 'Sin ubicación'}</span>
+                      <span><b>Fila asistencia:</b> {item.filaAsistencia || 'No encontrada'}</span>
+                      <span><b>Hoja eventualidades:</b> {item.hoja || 'No disponible'}</span>
+                      <span><b>Fila eventualidades:</b> {item.filaEventualidades || 'No encontrada'}</span>
+                    </div>
+                  </div>
+                  <button
+                    className="shrink-0 rounded-md bg-violet-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    type="button"
+                    disabled={disabled}
+                    onClick={() =>
+                      onResolve(
+                        item,
+                        item.status === 'requiere_confirmacion'
+                          ? 'Tiempo -1 confirmado y revisado por el usuario'
+                          : 'Diferencia de eventualidad revisada por el usuario',
+                      )
+                    }
+                  >
+                    {item.status === 'requiere_confirmacion' ? 'Confirmar y continuar' : 'Marcar revisado'}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+          {pending.length > 20 ? (
+            <button
+              className="mt-3 text-sm font-semibold text-violet-700 hover:text-violet-900"
+              type="button"
+              onClick={() => setShowAll((current) => !current)}
+            >
+              {showAll ? 'Mostrar menos' : `Mostrar los ${pending.length} casos pendientes`}
+            </button>
+          ) : null}
+        </>
+      ) : (
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">
+          Todas las eventualidades fueron confirmadas o revisadas.
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -328,7 +445,13 @@ function EmployeeAuditCard({ row, index, disabled, onAdjust, onAddIrregularPunch
   );
 }
 
-export default function AuditReviewPanel({ audit, disabled, onAdjust, onAddIrregularPunch }) {
+export default function AuditReviewPanel({
+  audit,
+  disabled,
+  onAdjust,
+  onAddIrregularPunch,
+  onResolveEventuality,
+}) {
   const pending = useMemo(() => audit?.pendingEmployees ?? [], [audit]);
   if (!audit) return null;
 
@@ -350,9 +473,19 @@ export default function AuditReviewPanel({ audit, disabled, onAdjust, onAddIrreg
             value={`${audit.general.empleadosCuadrados}/${audit.general.totalEmpleados} cuadrados`}
           />
           <MetricPill label="Diferencia" value={audit.general.diferencia} tone={audit.general.diferenciaMin ? 'rose' : 'green'} />
-          <MetricPill label="Estado" value={audit.general.estadoCuadre} tone={audit.general.diferenciaMin ? 'amber' : 'green'} />
+          <MetricPill
+            label="Estado"
+            value={audit.hasDiscrepancies ? 'Requiere revisión' : audit.general.estadoCuadre}
+            tone={audit.hasDiscrepancies ? 'amber' : 'green'}
+          />
         </div>
       </div>
+
+      <EventualityReconciliation
+        reconciliation={audit.eventuality}
+        disabled={disabled}
+        onResolve={onResolveEventuality}
+      />
 
       {pending.length ? (
         <div className="mt-4 space-y-4">

@@ -37,16 +37,16 @@ export function parseDateValue(value) {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
-  const isoCandidate = new Date(raw);
-  if (!Number.isNaN(isoCandidate.getTime())) return isoCandidate;
-
   const match = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
-  if (!match) return null;
+  if (match) {
+    const [, dd, mm, yyyy] = match;
+    const year = yyyy.length === 2 ? `20${yyyy}` : yyyy;
+    const parsed = new Date(Number(year), Number(mm) - 1, Number(dd));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
 
-  const [, dd, mm, yyyy] = match;
-  const year = yyyy.length === 2 ? `20${yyyy}` : yyyy;
-  const parsed = new Date(Number(year), Number(mm) - 1, Number(dd));
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  const isoCandidate = new Date(raw);
+  return Number.isNaN(isoCandidate.getTime()) ? null : isoCandidate;
 }
 
 export function getDayIndex({ dayName, dateValue }) {

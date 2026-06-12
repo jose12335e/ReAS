@@ -1,3 +1,5 @@
+import { refreshEventualityReconciliation } from './eventualitiesReader.js';
+
 const TIME_FIELDS = [
   'tiempoTardanza',
   'tiempoTardanzaJustificada',
@@ -220,12 +222,16 @@ export function auditResult(result) {
   );
   const pendingEmployees = employeeAudits.filter((row) => row.requiereRevision);
   const general = buildGeneralAudit(employeeAudits);
+  const eventuality = refreshEventualityReconciliation(result?.eventualityAudit);
+  const hasEventualityDifferences = Boolean(eventuality.enabled && eventuality.pendingItems.length);
 
   return {
     employeeAudits,
     pendingEmployees,
     general,
-    hasDiscrepancies: pendingEmployees.length > 0 || general.diferenciaMin !== 0,
+    eventuality,
+    hasDiscrepancies:
+      hasEventualityDifferences || pendingEmployees.length > 0 || general.diferenciaMin !== 0,
   };
 }
 
@@ -506,5 +512,28 @@ export function applyManualIrregularPunch(result, employeeAudit, detail = {}) {
       ...(result.events ?? {}),
       ponchesIrregulares: [...(result.events?.ponchesIrregulares ?? []), poncheRow],
     },
+  });
+}
+
+export function resolveEventualityAuditItem(result, itemId, resolution = 'Revisado por el usuario') {
+  if (!result?.eventualityAudit?.enabled || !itemId) return result;
+
+  const items = (result.eventualityAudit.items ?? []).map((item) =>
+    item.id === itemId
+      ? {
+          ...item,
+          resolved: true,
+          resolution,
+          resolvedAt: new Date().toISOString(),
+        }
+      : item,
+  );
+
+  return recalculateAuditAndSummaries({
+    ...result,
+    eventualityAudit: refreshEventualityReconciliation({
+      ...result.eventualityAudit,
+      items,
+    }),
   });
 }

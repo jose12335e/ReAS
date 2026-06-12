@@ -1,12 +1,14 @@
-import { FileSpreadsheet, Files, Upload } from 'lucide-react';
+import { ClipboardCheck, FileSpreadsheet, Files, Upload } from 'lucide-react';
 
 export default function UploadExcel({
   primaryFile,
   secondaryFiles,
   payrollFile,
+  eventualitiesFile,
   onPrimaryFile,
   onSecondaryFiles,
   onPayrollFile,
+  onEventualitiesFile,
   disabled,
 }) {
   return (
@@ -20,12 +22,12 @@ export default function UploadExcel({
             <h2 className="text-base font-semibold">Carga de archivos</h2>
           </div>
           <p className="mt-1 text-sm text-slate-600">
-            Sube el archivo principal de asistencia, horario extendido y nómina para cruzar datos por código.
+            Sube asistencia y los libros auxiliares para confirmar horarios, nómina y eventualidades.
           </p>
         </div>
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-3">
+      <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <label className="group relative flex min-h-40 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-teal-300 bg-teal-50/70 px-4 py-6 text-center shadow-sm transition hover:border-teal-500 hover:bg-teal-50">
           <span className="absolute inset-x-0 top-0 h-1 bg-teal-600" />
           <span className="grid h-12 w-12 place-items-center rounded-lg bg-white text-teal-700 shadow-sm ring-1 ring-teal-100 transition group-hover:-translate-y-0.5">
@@ -82,6 +84,26 @@ export default function UploadExcel({
             accept=".xlsx,.xls,.csv"
             disabled={disabled}
             onChange={(event) => onPayrollFile(event.target.files?.[0] ?? null)}
+          />
+        </label>
+
+        <label className="group relative flex min-h-40 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-violet-300 bg-violet-50/60 px-4 py-6 text-center shadow-sm transition hover:border-violet-500 hover:bg-violet-50">
+          <span className="absolute inset-x-0 top-0 h-1 bg-violet-600" />
+          <span className="grid h-12 w-12 place-items-center rounded-lg bg-white text-violet-700 shadow-sm ring-1 ring-violet-100 transition group-hover:-translate-y-0.5">
+            <ClipboardCheck className="h-7 w-7" />
+          </span>
+          <span className="mt-3 text-sm font-semibold text-slate-900">Excel de eventualidades</span>
+          <span className="mt-1 max-w-sm text-xs text-slate-600">
+            {eventualitiesFile
+              ? eventualitiesFile.name
+              : 'Confirma por CODIGO, fecha y tipo; incluye permisos, tardanzas y demás casos'}
+          </span>
+          <input
+            className="sr-only"
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            disabled={disabled}
+            onChange={(event) => onEventualitiesFile(event.target.files?.[0] ?? null)}
           />
         </label>
       </div>

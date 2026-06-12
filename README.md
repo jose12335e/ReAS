@@ -11,10 +11,12 @@ El sistema fue creado para reducir el trabajo manual en Excel, estandarizar cál
 - Detección y selección del mes evaluado.
 - Cruce opcional con archivo de horario extendido.
 - Cruce opcional con nómina para completar datos y excluir personal no calculable.
+- Cruce opcional con el Excel de eventualidades por código, fecha y tipo.
 - Reglas para horario normal, horario extendido y horario modificado.
 - Procesamiento pesado en Web Worker para evitar bloquear la interfaz.
 - Dashboard con indicadores, gráficos, rankings y cuadros listos para copiar.
 - Auditoría de descuadres por empleado y por registro.
+- Conciliación prioritaria de eventualidades presentes en una sola fuente, con tipo diferente o tiempo `-1`.
 - Exportación Excel institucional con hojas de control, tablas y resúmenes.
 - Protección de estructura del libro exportado para evitar mover, ocultar o borrar hojas.
 
@@ -88,11 +90,28 @@ Archivo opcional usado para identificar empleados con horario extendido. El cruc
 
 Archivo opcional usado para completar datos del colaborador y excluir registros que no deben calcularse, por ejemplo directores, subdirectores, posiciones `DIRECCION V` o personas con fecha de ingreso posterior al mes evaluado.
 
+### Excel de eventualidades
+
+Archivo opcional usado para confirmar permisos, licencias, ausencias, tardanzas, salidas tempranas y demás eventualidades. El cruce se realiza por `CODIGO + FECHA + TIPO DE EVENTUALIDAD` y puede usar rangos entre `FECHA INICIO` y `FECHA FIN`.
+
+Columnas esperadas:
+
+- `CODIGO DE EMPLEADO`
+- `NOMBRE`
+- `TIPO DE EVENTUALIDAD`
+- `UBICACION`
+- `FECHA INICIO`
+- `FECHA FIN`
+- `CANTIDAD DIAS`
+- `CANTIDAD HORAS`
+
+Los valores `-1` se envían a la auditoría para confirmación. Si una eventualidad aparece solo en uno de los archivos o el tipo no coincide, se presenta antes del cuadre de horas.
+
 ## Flujo general de uso
 
 1. Iniciar sesión con código autorizado.
 2. Cargar el Excel principal de asistencia.
-3. Cargar horario extendido y nómina si aplican.
+3. Cargar horario extendido, nómina y eventualidades si aplican.
 4. Seleccionar el mes evaluado.
 5. Revisar o ajustar el mapeo de columnas.
 6. Procesar la información.
@@ -114,9 +133,10 @@ El archivo exportado incluye, entre otras, estas hojas:
 7. `Tabla 8 Eventualidades HE`
 8. `Data procesada`
 9. `Auditoria de cuadre`
-10. `Resumen general`
-11. `Resumen por ubicación`
-12. `Resumen por empleado`
+10. `Auditoria eventualidades`
+11. `Resumen general`
+12. `Resumen por ubicación`
+13. `Resumen por empleado`
 
 La hoja `Control del reporte` queda protegida y no editable. Las demás hojas son editables. La estructura del libro queda protegida para evitar mover, ocultar o borrar hojas.
 

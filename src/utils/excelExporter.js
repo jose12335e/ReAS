@@ -1542,6 +1542,8 @@ async function addControlReportSheet(workbook, result, reportOptions = {}) {
   const availableMonths = metadata.availableMonths ?? [];
   const extendedSchedule = metadata.extendedSchedule ?? {};
   const payroll = metadata.payroll ?? {};
+  const eventualities = metadata.eventualities ?? {};
+  const eventualityAudit = audit?.eventuality ?? {};
   const generatedAt = new Date();
   const formatCount = (value, suffix = '') => {
     const count = Number(value ?? 0);
@@ -1643,8 +1645,38 @@ async function addControlReportSheet(workbook, result, reportOptions = {}) {
     'Ingreso posterior al mes',
     formatCount(payrollSummary.byHireDateRows, ' fila(s)'),
   );
+  addControlKeyValue(
+    worksheet,
+    37,
+    'Excel de eventualidades',
+    eventualities.fileName ? `Sí - ${eventualities.fileName}` : 'No',
+  );
+  addControlKeyValue(
+    worksheet,
+    38,
+    'Hojas de eventualidades usadas',
+    (eventualities.sheets ?? []).map((sheet) => sheet.sheetName).join(', '),
+  );
+  addControlKeyValue(
+    worksheet,
+    39,
+    'Registros diarios de eventualidades',
+    formatCount(eventualities.stats?.dailyRecords),
+  );
+  addControlKeyValue(
+    worksheet,
+    40,
+    'Diferencias de eventualidades',
+    formatCount(eventualityAudit.stats?.pending),
+  );
+  addControlKeyValue(
+    worksheet,
+    41,
+    'Eventualidades con -1',
+    formatCount(eventualityAudit.stats?.pendingTime),
+  );
 
-  const warningTitleRow = 38;
+  const warningTitleRow = 43;
   const warningStartRow = warningTitleRow + 1;
   addControlSectionTitle(worksheet, warningTitleRow, 'Advertencias del procesamiento');
   if (warnings.length) {

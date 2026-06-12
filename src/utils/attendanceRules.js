@@ -16,6 +16,10 @@ import {
 } from './timeUtils.js';
 import { getEmployeeCodeKeys } from './extendedScheduleReader.js';
 import {
+  EVENTUALITY_TYPES,
+  findEventualitiesForRow,
+} from './eventualitiesReader.js';
+import {
   buildEmployeeDisciplinarySummary,
   getMaxConsecutiveWorkdayAbsences,
 } from './disciplinaryRules.js';
@@ -254,6 +258,15 @@ function buildProcessedOutput(row, metrics) {
     'Hora entrada': row.entradaRaw,
     'Hora salida': row.salidaRaw,
     'Tiempo observaciones': row.tiempoObservacionesRaw,
+    'Eventualidad externa': row.externalEventualities
+      ?.map((event) => event.tipoLabel || event.tipoOriginal)
+      .join('; '),
+    'Tipos de eventualidad detectados': row.detectedEventTypes?.join('; '),
+    'Tipos de eventualidad en asistencia': row.attendanceSourceTypes?.join('; '),
+    'IDs eventualidades externas': row.externalEventualities?.map((event) => event.id).join('; '),
+    'Eventualidad externa pendiente': row.externalEventualities?.some((event) => event.pendingTime)
+      ? 'SI'
+      : 'NO',
     'Horas esperadas': minutesToHours(metrics.horasEsperadasMin),
     'Horas trabajadas reales': minutesToHours(metrics.horasTrabajadasRealesMin),
     'Horas trabajadas reconocidas': minutesToHours(metrics.horasTrabajadasReconocidasMin),
@@ -294,15 +307,31 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
     dateValue: asValue(rawRow, mapping, 'fecha'),
   });
   const expectedWindow = getExpectedWindow(scheduleType, dayIndex, modifiedSchedule);
+  const parsedDate = parseDateValue(asValue(rawRow, mapping, 'fecha'));
+  const dateKey = parsedDate
+    ? parsedDate.toISOString().slice(0, 10)
+    : clean(asValue(rawRow, mapping, 'fecha'));
+  const externalEventualities = findEventualitiesForRow(
+    options.eventualitiesByCodeDate,
+    asValue(rawRow, mapping, 'codigo'),
+    dateKey,
+  );
+  const externalTypes = new Set(externalEventualities.map((event) => event.tipo).filter(Boolean));
   const entryExpected = parseClockToMinutes(expectedWindow.entry ?? schedule.defaultEntry);
   const exitExpected = parseClockToMinutes(expectedWindow.exit);
   const entryMinutes = parseClockToMinutes(asValue(rawRow, mapping, 'entrada'));
   const exitMinutes = parseClockToMinutes(asValue(rawRow, mapping, 'salida'));
   const observation = classifyObservation(asValue(rawRow, mapping, 'observaciones'));
-  const hasObservation = observation.isJustified;
-  const primaryId = observation.primary?.id;
-  const hasVerViatico = observation.matches.some((match) => match.id === 'ver-viatico');
-  const isHoliday = observation.matches.some((match) => match.id === 'feriado');
+  const externalPrimaryType = externalEventualities.find((event) => event.tipo)?.tipo ?? '';
+  const hasExternalConfirmation = externalTypes.size > 0;
+  const hasObservation = observation.isJustified || hasExternalConfirmation;
+  const primaryId = externalPrimaryType || observation.primary?.id;
+  const hasVerViatico =
+    externalTypes.has(EVENTUALITY_TYPES.TRAVEL) ||
+    observation.matches.some((match) => match.id === 'ver-viatico');
+  const isHoliday =
+    externalTypes.has(EVENTUALITY_TYPES.HOLIDAY) ||
+    observation.matches.some((match) => match.id === 'feriado');
   const expectedMinutes = expectedWindow.expectedMinutes;
   const absenceEquivalentMinutes = getAbsenceEquivalentMinutes(scheduleType, expectedMinutes);
   const isWorkday = expectedWindow.isWorkday && !isHoliday;
@@ -324,18 +353,43 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
   const lateMinutes = isLate ? entryMinutes - entryExpected : 0;
   const isEarlyExit = hasValidPunchPair && exitExpected !== null && exitMinutes < exitExpected;
   const earlyExitMinutes = isEarlyExit ? exitExpected - exitMinutes : 0;
-  const isVacation = primaryId === 'vacacion';
-  const isLicense = primaryId === 'licencia';
-  const isPermit = primaryId === 'permiso';
-  const isObservedAbsence = primaryId === 'ausencia';
+  const externalIsAuthoritative = externalTypes.size > 0;
+  const isVacation = externalIsAuthoritative
+    ? externalTypes.has(EVENTUALITY_TYPES.VACATION)
+    : primaryId === 'vacacion';
+  const isLicense = externalIsAuthoritative
+    ? externalTypes.has(EVENTUALITY_TYPES.LICENSE)
+    : primaryId === 'licencia';
+  const isPermit = externalIsAuthoritative
+    ? externalTypes.has(EVENTUALITY_TYPES.PERMIT)
+    : primaryId === 'permiso';
+  const isObservedAbsence = externalIsAuthoritative
+    ? externalTypes.has(EVENTUALITY_TYPES.ABSENCE)
+    : primaryId === 'ausencia';
   const overridesIrregularPunch = isLicense || isPermit || isObservedAbsence;
-  const hasTardinessObservation = observation.matches.some((match) => match.id === 'tardanza');
+  const hasTardinessObservation =
+    externalTypes.has(EVENTUALITY_TYPES.TARDINESS) ||
+    observation.matches.some((match) => match.id === 'tardanza');
+  const hasEarlyExitConfirmation = externalTypes.has(EVENTUALITY_TYPES.EARLY_EXIT);
+  const externalPermit = externalEventualities.find(
+    (event) => event.tipo === EVENTUALITY_TYPES.PERMIT,
+  );
   const permitObservationMinutes = isPermit
     ? parseDurationToMinutes(asValue(rawRow, mapping, 'tiempoObservaciones'))
     : 0;
+  const externalPermitMinutes = externalPermit?.exactMinutes ?? 0;
+  const externalPermitDayMinutes = externalPermit?.fullDayCount ? 8 * 60 : 0;
   const permitMinutes = isPermit
-    ? permitObservationMinutes || (isAbsent || isIrregular ? absenceEquivalentMinutes : 0)
+    ? externalPermitMinutes ||
+      permitObservationMinutes ||
+      externalPermitDayMinutes ||
+      (isAbsent || isIrregular ? absenceEquivalentMinutes : 0)
     : 0;
+  const hasAbsenceJustification =
+    observation.isJustified ||
+    externalTypes.has(EVENTUALITY_TYPES.ABSENCE) ||
+    externalTypes.has(EVENTUALITY_TYPES.PERMIT) ||
+    externalTypes.has(EVENTUALITY_TYPES.LICENSE);
 
   const metrics = createEmptyMetrics();
   const states = [];
@@ -403,7 +457,7 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
         metrics.tiempoAusenciaNoJustificadaMin += uncoveredAbsenceMinutes;
         metrics.tiempoNoTrabajadoNoJustificadoMin += uncoveredAbsenceMinutes;
         states.push('Ausencia no justificada parcial');
-      } else if (hasObservation) {
+      } else if (hasAbsenceJustification) {
         metrics.ausenciasJustificadas = 1;
         metrics.horasAusenciaMin += absenceEquivalentMinutes;
         metrics.tiempoAusenciaJustificadaMin += absenceEquivalentMinutes;
@@ -459,7 +513,7 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
 
       if (isEarlyExit && !isPermit) {
         metrics.tiempoSalidaTempranaMin += earlyExitMinutes;
-        if (hasObservation) {
+        if (hasEarlyExitConfirmation || observation.isJustified) {
           metrics.salidasTempranasJustificadas = 1;
           metrics.tiempoSalidaTempranaJustificadaMin += earlyExitMinutes;
           metrics.tiempoNoTrabajadoJustificadoMin += earlyExitMinutes;
@@ -478,7 +532,42 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
     }
   }
 
-  const parsedDate = parseDateValue(asValue(rawRow, mapping, 'fecha'));
+  const observationTypeMap = {
+    vacacion: EVENTUALITY_TYPES.VACATION,
+    licencia: EVENTUALITY_TYPES.LICENSE,
+    permiso: EVENTUALITY_TYPES.PERMIT,
+    ausencia: EVENTUALITY_TYPES.ABSENCE,
+    tardanza: EVENTUALITY_TYPES.TARDINESS,
+    'ver-viatico': EVENTUALITY_TYPES.TRAVEL,
+    feriado: EVENTUALITY_TYPES.HOLIDAY,
+  };
+  const attendanceSourceTypes = new Set(
+    observation.matches.map((match) => observationTypeMap[match.id]).filter(Boolean),
+  );
+  if (isLate) attendanceSourceTypes.add(EVENTUALITY_TYPES.TARDINESS);
+  if (isEarlyExit) attendanceSourceTypes.add(EVENTUALITY_TYPES.EARLY_EXIT);
+  if (isAbsent && !attendanceSourceTypes.size) attendanceSourceTypes.add(EVENTUALITY_TYPES.ABSENCE);
+  if (isIrregular && !attendanceSourceTypes.size) {
+    attendanceSourceTypes.add(EVENTUALITY_TYPES.IRREGULAR_PUNCH);
+  }
+  const detectedEventTypes = [
+    metrics.vacaciones ? EVENTUALITY_TYPES.VACATION : '',
+    metrics.licencias ? EVENTUALITY_TYPES.LICENSE : '',
+    metrics.permisos ? EVENTUALITY_TYPES.PERMIT : '',
+    metrics.ausenciasJustificadas || metrics.ausenciasNoJustificadas
+      ? EVENTUALITY_TYPES.ABSENCE
+      : '',
+    metrics.tardanzasJustificadas || metrics.tardanzasNoJustificadas
+      ? EVENTUALITY_TYPES.TARDINESS
+      : '',
+    metrics.salidasTempranasJustificadas || metrics.salidasTempranasNoJustificadas
+      ? EVENTUALITY_TYPES.EARLY_EXIT
+      : '',
+    metrics.ponchesIrregulares ? EVENTUALITY_TYPES.IRREGULAR_PUNCH : '',
+    metrics.verViatico ? EVENTUALITY_TYPES.TRAVEL : '',
+    isHoliday ? EVENTUALITY_TYPES.HOLIDAY : '',
+  ].filter(Boolean);
+  const externalLabels = externalEventualities.map((event) => event.tipoLabel || event.tipoOriginal);
   const displayRow = {
     codigo: clean(asValue(rawRow, mapping, 'codigo')),
     nombre: clean(asValue(rawRow, mapping, 'nombre')),
@@ -492,9 +581,17 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
     salidaRaw: clean(asValue(rawRow, mapping, 'salida')),
     tiempoObservacionesRaw: clean(asValue(rawRow, mapping, 'tiempoObservaciones')),
     observacionRaw: observation.raw,
-    observacionProcesada: observation.processedLabel,
+    observacionProcesada: [
+      observation.processedLabel,
+      externalLabels.length ? `Confirmado por Excel de eventualidades: ${externalLabels.join(', ')}` : '',
+    ]
+      .filter(Boolean)
+      .join('; '),
     estadoFinal: states.join('; ') || (isWorkday ? 'Sin eventualidad' : 'Dia no laborable'),
     eventualidadJustificada: hasObservation,
+    detectedEventTypes,
+    attendanceSourceTypes: Array.from(attendanceSourceTypes),
+    externalEventualities,
     metricFlags: metrics,
   };
 

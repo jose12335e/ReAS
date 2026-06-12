@@ -27,7 +27,11 @@ import RulesPanel from '../components/RulesPanel.jsx';
 import UploadExcel from '../components/UploadExcel.jsx';
 import { scheduleConfig } from '../config/scheduleConfig.js';
 import { SESSION_TTL_HOURS, useAttendanceStore } from '../store/attendanceStore.js';
-import { applyAuditAdjustment, applyManualIrregularPunch } from '../utils/auditRules.js';
+import {
+  applyAuditAdjustment,
+  applyManualIrregularPunch,
+  resolveEventualityAuditItem,
+} from '../utils/auditRules.js';
 import {
   validateColumnMapping,
   validateFileForUpload,
@@ -164,6 +168,7 @@ export default function Dashboard({ activeUser, onLogout }) {
   const [primaryFile, setPrimaryFile] = useState(null);
   const [secondaryFiles, setSecondaryFiles] = useState([]);
   const [payrollFile, setPayrollFile] = useState(null);
+  const [eventualitiesFile, setEventualitiesFile] = useState(null);
   const [preview, setPreview] = useState({ headers: [], previewRows: [], rows: [], availableMonths: [] });
   const [selectedMonth, setSelectedMonth] = useState(null);
   const [result, setResult] = useState(null);
@@ -352,9 +357,16 @@ export default function Dashboard({ activeUser, onLogout }) {
             arrayBuffer: await payrollFile.arrayBuffer(),
           }
         : null;
+      const eventualitiesPayload = eventualitiesFile
+        ? {
+            name: eventualitiesFile.name,
+            arrayBuffer: await eventualitiesFile.arrayBuffer(),
+          }
+        : null;
       const transferList = [
         ...extendedScheduleFiles.map((file) => file.arrayBuffer),
         ...(payrollPayload ? [payrollPayload.arrayBuffer] : []),
+        ...(eventualitiesPayload ? [eventualitiesPayload.arrayBuffer] : []),
       ];
 
       workerRef.current?.postMessage(
@@ -366,6 +378,7 @@ export default function Dashboard({ activeUser, onLogout }) {
             modifiedSchedule,
             extendedScheduleFiles,
             payrollFile: payrollPayload,
+            eventualitiesFile: eventualitiesPayload,
             primaryFileName: primaryFile?.name ?? '',
             selectedMonth,
           },
@@ -401,6 +414,17 @@ export default function Dashboard({ activeUser, onLogout }) {
     setPayrollFile(file);
   }
 
+  function handleEventualitiesFile(file) {
+    const validation = validateFileForUpload(file, { label: 'Excel de eventualidades' });
+    setFileWarnings(validation.warnings);
+    if (!validation.isValid) {
+      setErrors(validation.errors);
+      return;
+    }
+    setErrors([]);
+    setEventualitiesFile(file);
+  }
+
   function handleAuditAdjustment(employeeAudit, bucket, options) {
     setResult((current) => {
       if (!current) return current;
@@ -427,6 +451,19 @@ export default function Dashboard({ activeUser, onLogout }) {
     });
   }
 
+  function handleResolveEventuality(item, resolution) {
+    setResult((current) => {
+      if (!current) return current;
+      const adjustedResult = resolveEventualityAuditItem(current, item.id, resolution);
+      try {
+        setLastResult(adjustedResult);
+      } catch {
+        // La revisión queda aplicada en pantalla aunque localStorage no tenga espacio suficiente.
+      }
+      return adjustedResult;
+    });
+  }
+
   function handleNewReport() {
     if (
       result &&
@@ -437,6 +474,7 @@ export default function Dashboard({ activeUser, onLogout }) {
     setPrimaryFile(null);
     setSecondaryFiles([]);
     setPayrollFile(null);
+    setEventualitiesFile(null);
     setPreview({ headers: [], previewRows: [], rows: [], availableMonths: [] });
     setSelectedMonth(null);
     setResult(null);
@@ -706,6 +744,7 @@ export default function Dashboard({ activeUser, onLogout }) {
                 disabled={isBusy}
                 onAdjust={handleAuditAdjustment}
                 onAddIrregularPunch={handleManualIrregularPunch}
+                onResolveEventuality={handleResolveEventuality}
               />
             ) : null}
           </section>
@@ -717,10 +756,12 @@ export default function Dashboard({ activeUser, onLogout }) {
               primaryFile={primaryFile}
               secondaryFiles={secondaryFiles}
               payrollFile={payrollFile}
+              eventualitiesFile={eventualitiesFile}
               disabled={isBusy}
               onPrimaryFile={handlePrimaryFile}
               onSecondaryFiles={handleSecondaryFiles}
               onPayrollFile={handlePayrollFile}
+              onEventualitiesFile={handleEventualitiesFile}
             />
 
             <ProgressBar progress={progress} status={status} />
@@ -796,6 +837,20 @@ export default function Dashboard({ activeUser, onLogout }) {
                 <div className="mt-1">
                   {result.metadata.payroll.fileName}: hoja "{result.metadata.payroll.sheetName}",{' '}
                   {result.metadata.excludedRowsByPayroll ?? 0} fila(s) excluida(s) de cálculos.
+                </div>
+              </div>
+            ) : null}
+
+            {result?.metadata?.eventualities?.fileName ? (
+              <div className="rounded-lg border border-violet-200 bg-violet-50 p-4 text-sm text-violet-950 shadow-sm">
+                <div className="font-semibold">
+                  Eventualidades cruzadas por CODIGO, fecha y tipo:{' '}
+                  {result.metadata.eventualities.stats?.dailyRecords ?? 0} registro(s) diario(s)
+                </div>
+                <div className="mt-1">
+                  {result.metadata.eventualities.fileName}:{' '}
+                  {result.metadata.eventualities.sheets?.length ?? 0} hoja(s) utilizada(s),{' '}
+                  {result.audit?.eventuality?.stats?.pending ?? 0} diferencia(s) pendiente(s).
                 </div>
               </div>
             ) : null}

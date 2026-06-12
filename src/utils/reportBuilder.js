@@ -69,6 +69,27 @@ function pickAuditRow(row) {
   };
 }
 
+function pickEventualityAuditRow(row) {
+  return {
+    PRIORIDAD: row.priority,
+    ESTADO: row.status,
+    RESUELTO: row.resolved ? 'SI' : 'NO',
+    CODIGO: row.codigo,
+    NOMBRE: row.nombre,
+    UBICACION: row.ubicacion,
+    FECHA: row.fecha,
+    'EVENTUALIDAD EN ARCHIVO': row.tipoExternoLabel,
+    'EVENTUALIDAD EN ASISTENCIA': row.tiposAsistenciaLabel,
+    'CANTIDAD DIAS': row.cantidadDias,
+    'CANTIDAD HORAS': row.cantidadHoras,
+    'FILA ASISTENCIA': row.filaAsistencia,
+    'HOJA EVENTUALIDADES': row.hoja,
+    'FILA EVENTUALIDADES': row.filaEventualidades,
+    HALLAZGO: row.reason,
+    RESOLUCION: row.resolution,
+  };
+}
+
 function pickLocationRow(row) {
   return {
     UBICACION: row.ubicacion,
@@ -158,6 +179,10 @@ export function buildReportWorkbookData(result) {
     sheets: [
       { name: 'Data procesada', rows: result.processedRows },
       { name: 'Auditoria de cuadre', rows: (result.audit?.employeeAudits ?? []).map(pickAuditRow) },
+      {
+        name: 'Auditoria eventualidades',
+        rows: (result.audit?.eventuality?.items ?? []).map(pickEventualityAuditRow),
+      },
       { name: 'Resumen general', rows: [pickGeneralRow(result.summaryGeneral)] },
       { name: 'Resumen por ubicación', rows: locationRows },
       { name: 'Resumen por empleado', rows: employeeRowsWithSubtotals.length ? employeeRowsWithSubtotals : employeeRows },
