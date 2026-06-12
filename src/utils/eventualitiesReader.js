@@ -477,7 +477,11 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
   });
 
   const items = [];
-  const keys = new Set([...attendanceByKey.keys(), ...externalByKey.keys()]);
+  const keys = new Set(attendanceByKey.keys());
+  const ignoredExternalRecords = Array.from(externalByKey.entries()).reduce(
+    (total, [key, records]) => total + (attendanceByKey.has(key) ? 0 : records.length),
+    0,
+  );
 
   keys.forEach((key) => {
     const attendance = attendanceByKey.get(key);
@@ -552,6 +556,7 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
       onlyAttendance: items.filter((item) => item.status === 'solo_asistencia').length,
       differentType: items.filter((item) => item.status === 'tipo_diferente').length,
       pendingTime: items.filter((item) => item.status === 'requiere_confirmacion').length,
+      ignoredExternalRecords,
     },
   };
 }
@@ -573,6 +578,7 @@ export function refreshEventualityReconciliation(reconciliation = {}) {
       onlyAttendance: pendingItems.filter((item) => item.status === 'solo_asistencia').length,
       differentType: pendingItems.filter((item) => item.status === 'tipo_diferente').length,
       pendingTime: pendingItems.filter((item) => item.status === 'requiere_confirmacion').length,
+      ignoredExternalRecords: reconciliation.stats?.ignoredExternalRecords ?? 0,
     },
   };
 }
