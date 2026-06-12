@@ -239,8 +239,7 @@ export function parseEventualitiesWorkbook(arrayBuffer, fileName, evaluationMont
 
       const positiveHours = cantidadHoras > 0 ? cantidadHoras : 0;
       const positiveDays = cantidadDias > 0 ? cantidadDias : 0;
-      const pendingTime =
-        (cantidadDias === -1 || cantidadHoras === -1) && !positiveHours && !positiveDays;
+      const pendingTime = cantidadDias === -1 || cantidadHoras === -1;
 
       fechas.filter((fecha) => belongsToMonth(fecha, evaluationMonth)).forEach((fecha, dayIndex) => {
         records.push({
@@ -374,6 +373,7 @@ function buildReconciliationItem({
       : 'Ninguna',
     cantidadDias: externalRecord?.cantidadDias ?? null,
     cantidadHoras: externalRecord?.cantidadHoras ?? null,
+    pendingTime: Boolean(externalRecord?.pendingTime),
     tiempoExactoMin: externalRecord?.exactMinutes ?? null,
     tiempoSugeridoMin: suggestedMinutes,
     clasificacionActual: currentBucket,

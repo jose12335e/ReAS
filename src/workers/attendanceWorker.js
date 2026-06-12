@@ -7,7 +7,9 @@ import {
 } from '../utils/extendedScheduleReader.js';
 import { parsePayrollWorkbook } from '../utils/payrollReader.js';
 import { validateColumnMapping, validateWorkbookData } from '../utils/validationRules.js';
-import { recalculateAuditAndSummaries } from '../utils/auditRules.js';
+import {
+  applyAutomaticEventualityDecisions,
+} from '../utils/auditRules.js';
 import {
   buildEventualityReconciliation,
   parseEventualitiesWorkbook,
@@ -103,10 +105,12 @@ self.onmessage = async (event) => {
         eventualities,
         processedResult.processedRows,
       );
-      const result = recalculateAuditAndSummaries({
+      const resultWithEventualities = {
         ...processedResult,
         eventualityAudit,
-      });
+      };
+      post('progress', { value: 70, label: 'Clasificando eventualidades confirmadas' });
+      const result = applyAutomaticEventualityDecisions(resultWithEventualities);
       post('progress', { value: 78, label: 'Construyendo resúmenes' });
       post('progress', { value: 100, label: 'Procesamiento completado' });
       const availableMonths = detectAvailableMonths(cachedRows, payload.mapping);

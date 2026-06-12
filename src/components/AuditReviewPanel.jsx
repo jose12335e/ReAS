@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Clock3,
   Fingerprint,
+  Loader2,
   MapPin,
   PencilLine,
   ShieldAlert,
@@ -134,10 +135,16 @@ function EventualityReconciliation({ reconciliation, disabled, onDecision }) {
           <div className="mt-4 flex items-start gap-2 rounded-lg border border-violet-200 bg-white p-3 text-sm text-violet-950">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" />
             <span>
-              Aquí aparecen todas las eventualidades. Las diferencias se ordenan primero; después aparecen las que
-              coinciden para que confirmes su estado, comentario, tiempo y clasificación final.
+              Los estados claros se clasifican automáticamente. Los registros con -1, estado pendiente, datos
+              incompletos o diferencias permanecen para revisión manual.
             </span>
           </div>
+          {reconciliation.stats?.automaticProcessed ? (
+            <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">
+              {reconciliation.stats.automaticProcessed} eventualidad(es) fueron procesadas automáticamente. Ningún
+              registro con -1 fue clasificado de forma automática.
+            </div>
+          ) : null}
           <div className="mt-3 grid gap-3">
             {visibleItems.map((item) => {
               const timeValue = manualTimes[item.id] ?? formatMinutes(
@@ -201,6 +208,12 @@ function EventualityReconciliation({ reconciliation, disabled, onDecision }) {
                           }
                         />
                       </label>
+                      {item.pendingTime ? (
+                        <p className="text-xs font-semibold text-orange-700">
+                          Este registro contiene -1. Revisa el tiempo y elige una clasificaciÃ³n manual; no puede
+                          confirmarse sin cambios.
+                        </p>
+                      ) : null}
                       <div className="grid grid-cols-2 gap-2">
                         <AdjustmentButton
                           disabled={disabled || lockedAsIrregular || !timeMinutes}
@@ -223,7 +236,7 @@ function EventualityReconciliation({ reconciliation, disabled, onDecision }) {
                           Ponchado irregular
                         </AdjustmentButton>
                         <AdjustmentButton
-                          disabled={disabled || lockedAsIrregular}
+                          disabled={disabled || lockedAsIrregular || item.pendingTime}
                           onClick={() => onDecision(item, 'confirm', { minutes: timeMinutes })}
                         >
                           Confirmar actual
@@ -509,6 +522,7 @@ function EmployeeAuditCard({ row, index, disabled, onAdjust, onAddIrregularPunch
 export default function AuditReviewPanel({
   audit,
   disabled,
+  actionFeedback,
   onAdjust,
   onAddIrregularPunch,
   onEventualityDecision,
@@ -518,6 +532,26 @@ export default function AuditReviewPanel({
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
+      {actionFeedback ? (
+        <div
+          className={`fixed bottom-5 right-5 z-50 flex max-w-sm items-start gap-3 rounded-lg border px-4 py-3 text-sm font-semibold shadow-xl ${{
+            processing: 'border-sky-200 bg-sky-50 text-sky-900',
+            success: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+            error: 'border-rose-200 bg-rose-50 text-rose-900',
+          }[actionFeedback.status]}`}
+          role="status"
+          aria-live="polite"
+        >
+          {actionFeedback.status === 'processing' ? (
+            <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
+          ) : actionFeedback.status === 'success' ? (
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          ) : (
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          )}
+          <span>{actionFeedback.message}</span>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex items-center gap-2">

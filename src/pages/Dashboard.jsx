@@ -165,6 +165,10 @@ function ValidationSummaryPanel({ validation, fileWarnings = [] }) {
 
 export default function Dashboard({ activeUser, onLogout }) {
   const workerRef = useRef(null);
+  const persistenceTimerRef = useRef(null);
+  const persistenceVersionRef = useRef(0);
+  const feedbackTimerRef = useRef(null);
+  const auditActionLockRef = useRef(false);
   const [primaryFile, setPrimaryFile] = useState(null);
   const [secondaryFiles, setSecondaryFiles] = useState([]);
   const [payrollFile, setPayrollFile] = useState(null);
@@ -179,6 +183,7 @@ export default function Dashboard({ activeUser, onLogout }) {
   const [isBusy, setIsBusy] = useState(false);
   const [restoredFromStorage, setRestoredFromStorage] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [auditFeedback, setAuditFeedback] = useState(null);
 
   const {
     defaultScheduleType,
@@ -278,6 +283,14 @@ export default function Dashboard({ activeUser, onLogout }) {
 
     return () => worker.terminate();
   }, [clearLastResult, setLastResult, setMapping]);
+
+  useEffect(
+    () => () => {
+      if (persistenceTimerRef.current) window.clearTimeout(persistenceTimerRef.current);
+      if (feedbackTimerRef.current) window.clearTimeout(feedbackTimerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     clearExpiredSession();
@@ -425,43 +438,98 @@ export default function Dashboard({ activeUser, onLogout }) {
     setEventualitiesFile(file);
   }
 
-  function handleAuditAdjustment(employeeAudit, bucket, options) {
-    setResult((current) => {
-      if (!current) return current;
-      const adjustedResult = applyAuditAdjustment(current, employeeAudit, bucket, options);
-      try {
-        setLastResult(adjustedResult);
-      } catch {
-        // El ajuste queda aplicado en pantalla aunque localStorage no tenga espacio suficiente.
+  function scheduleResultPersistence(nextResult) {
+    if (!saveSession) return;
+    const persistenceVersion = ++persistenceVersionRef.current;
+    if (persistenceTimerRef.current) window.clearTimeout(persistenceTimerRef.current);
+    persistenceTimerRef.current = window.setTimeout(() => {
+      const persist = () => {
+        if (persistenceVersion !== persistenceVersionRef.current) return;
+        try {
+          setLastResult(nextResult);
+        } catch {
+          // El resultado permanece en pantalla aunque localStorage no tenga espacio suficiente.
+        }
+      };
+      if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(persist, { timeout: 1200 });
+      } else {
+        persist();
       }
-      return adjustedResult;
-    });
+    }, 650);
+  }
+
+  function showAuditFeedback(statusValue, message, actionId) {
+    if (feedbackTimerRef.current) window.clearTimeout(feedbackTimerRef.current);
+    setAuditFeedback({ status: statusValue, message, actionId });
+    if (statusValue !== 'processing') {
+      feedbackTimerRef.current = window.setTimeout(() => setAuditFeedback(null), 2800);
+    }
+  }
+
+  function executeAuditAction(actionId, processingMessage, successMessage, updater) {
+    if (auditActionLockRef.current || auditFeedback?.status === 'processing') return;
+    auditActionLockRef.current = true;
+    showAuditFeedback('processing', processingMessage, actionId);
+    window.setTimeout(() => {
+      setResult((current) => {
+        if (!current) {
+          auditActionLockRef.current = false;
+          return current;
+        }
+        try {
+          const adjustedResult = updater(current);
+          scheduleResultPersistence(adjustedResult);
+          auditActionLockRef.current = false;
+          window.queueMicrotask(() => showAuditFeedback('success', successMessage, actionId));
+          return adjustedResult;
+        } catch (error) {
+          auditActionLockRef.current = false;
+          window.queueMicrotask(() =>
+            showAuditFeedback(
+              'error',
+              error?.message || 'No se pudo completar la accion de auditoria.',
+              actionId,
+            ),
+          );
+          return current;
+        }
+      });
+    }, 0);
+  }
+
+  function handleAuditAdjustment(employeeAudit, bucket, options) {
+    executeAuditAction(
+      `adjust:${employeeAudit.codigo}:${bucket}:${options?.scopeLabel ?? 'total'}`,
+      'Aplicando ajuste de cuadre...',
+      'Ajuste aplicado y cuadre actualizado correctamente.',
+      (current) => applyAuditAdjustment(current, employeeAudit, bucket, options),
+    );
   }
 
   function handleManualIrregularPunch(employeeAudit, detail) {
-    setResult((current) => {
-      if (!current) return current;
-      const adjustedResult = applyManualIrregularPunch(current, employeeAudit, detail);
-      try {
-        setLastResult(adjustedResult);
-      } catch {
-        // El ajuste queda aplicado en pantalla aunque localStorage no tenga espacio suficiente.
-      }
-      return adjustedResult;
-    });
+    executeAuditAction(
+      `irregular:${employeeAudit.codigo}:${detail?.fila ?? detail?.fecha ?? 'registro'}`,
+      'Registrando ponchado irregular...',
+      'Ponchado irregular registrado correctamente.',
+      (current) => applyManualIrregularPunch(current, employeeAudit, detail),
+    );
   }
 
   function handleEventualityDecision(item, decision, options) {
-    setResult((current) => {
-      if (!current) return current;
-      const adjustedResult = applyEventualityAuditDecision(current, item, decision, options);
-      try {
-        setLastResult(adjustedResult);
-      } catch {
-        // La revisión queda aplicada en pantalla aunque localStorage no tenga espacio suficiente.
-      }
-      return adjustedResult;
-    });
+    const successMessages = {
+      justified: 'Eventualidad pasada a justificado correctamente.',
+      unjustified: 'Eventualidad pasada a no justificado correctamente.',
+      irregular: 'Eventualidad convertida en ponchado irregular.',
+      confirm: 'Clasificacion actual confirmada correctamente.',
+      discard: 'Eventualidad descartada correctamente.',
+    };
+    executeAuditAction(
+      `eventuality:${item.id}`,
+      'Actualizando eventualidad y recalculando el empleado...',
+      successMessages[decision] ?? 'Auditoria actualizada correctamente.',
+      (current) => applyEventualityAuditDecision(current, item, decision, options),
+    );
   }
 
   function handleNewReport() {
@@ -484,6 +552,8 @@ export default function Dashboard({ activeUser, onLogout }) {
     setStatus('');
     setIsBusy(false);
     setRestoredFromStorage(false);
+    setAuditFeedback(null);
+    persistenceVersionRef.current += 1;
     clearLastResult();
     setActiveTab('upload');
   }
@@ -503,6 +573,7 @@ export default function Dashboard({ activeUser, onLogout }) {
   }
 
   const hasPendingAudit = Boolean(result?.audit?.hasDiscrepancies);
+  const auditActionInProgress = auditFeedback?.status === 'processing';
   const tabs = [
     {
       id: 'dashboard',
@@ -741,7 +812,8 @@ export default function Dashboard({ activeUser, onLogout }) {
             {result ? (
               <AuditReviewPanel
                 audit={result.audit}
-                disabled={isBusy}
+                disabled={isBusy || auditActionInProgress}
+                actionFeedback={auditFeedback}
                 onAdjust={handleAuditAdjustment}
                 onAddIrregularPunch={handleManualIrregularPunch}
                 onEventualityDecision={handleEventualityDecision}

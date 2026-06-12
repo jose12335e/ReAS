@@ -302,7 +302,53 @@ function groupRows(rows, getKey) {
   return Array.from(groups.entries());
 }
 
-export function recalculateAuditAndSummaries(result) {
+function matchesAffectedEmployee(row, affectedEmployee) {
+  if (!affectedEmployee) return false;
+  if (String(row.codigo ?? row.CODIGO) !== String(affectedEmployee.codigo)) return false;
+  if (!affectedEmployee.ubicacion) return true;
+  return String(row.ubicacion ?? row.UBICACION) === String(affectedEmployee.ubicacion);
+}
+
+function incrementalAuditResult(result, affectedEmployee) {
+  const previousAudits = result.audit?.employeeAudits;
+  if (!previousAudits?.length || !affectedEmployee) return auditResult(result);
+
+  const affectedSummaries = (result.summaryByEmployee ?? []).filter((employee) =>
+    matchesAffectedEmployee(employee, affectedEmployee),
+  );
+  if (!affectedSummaries.length) return auditResult(result);
+
+  const affectedRows = (result.processedRows ?? []).filter((row) =>
+    matchesAffectedEmployee(row, affectedEmployee),
+  );
+  const replacements = new Map(
+    affectedSummaries.map((employee) => [
+      employeeKey(employee),
+      auditEmployee(
+        employee,
+        affectedRows.filter((row) => employeeKey(row) === employeeKey(employee)),
+      ),
+    ]),
+  );
+  const employeeAudits = previousAudits.map(
+    (audit) => replacements.get(employeeKey(audit)) ?? audit,
+  );
+  const pendingEmployees = employeeAudits.filter((row) => row.requiereRevision);
+  const general = buildGeneralAudit(employeeAudits);
+  const eventuality = refreshEventualityReconciliation(result.eventualityAudit);
+  const hasEventualityDifferences = Boolean(eventuality.enabled && eventuality.pendingItems.length);
+
+  return {
+    employeeAudits,
+    pendingEmployees,
+    general,
+    eventuality,
+    hasDiscrepancies:
+      hasEventualityDifferences || pendingEmployees.length > 0 || general.diferenciaMin !== 0,
+  };
+}
+
+export function recalculateAuditAndSummaries(result, options = {}) {
   const summaryByEmployee = result.summaryByEmployee ?? [];
   const summaryGeneral = aggregateRows(summaryByEmployee, { alcance: 'Total general' });
   const summaryByLocation = groupRows(summaryByEmployee, (row) => row.ubicacion)
@@ -320,7 +366,9 @@ export function recalculateAuditAndSummaries(result) {
 
   return {
     ...nextResult,
-    audit: auditResult(nextResult),
+    audit: options.affectedEmployee
+      ? incrementalAuditResult(nextResult, options.affectedEmployee)
+      : auditResult(nextResult),
   };
 }
 
@@ -404,7 +452,15 @@ function updateSpecificClassification(employee, type, bucket, minutes, direction
   return next;
 }
 
-function markEventualityDecision(result, item, decision, minutes, note, appliedBucket) {
+function markEventualityDecision(
+  result,
+  item,
+  decision,
+  minutes,
+  note,
+  appliedBucket,
+  metadata = {},
+) {
   const decisionLabels = {
     justified: 'Justificado',
     unjustified: 'No justificado',
@@ -435,23 +491,28 @@ function markEventualityDecision(result, item, decision, minutes, note, appliedB
           tiempoClasificadoActualMin: decision === 'discard' ? 0 : minutes,
           resolution,
           resolvedAt: new Date().toISOString(),
+          automatic: Boolean(metadata.automatic),
         }
       : current,
   );
-  const processedRows = (result.processedRows ?? []).map((row) => {
-    const matchesRow =
-      (item.filaAsistencia && String(row['#']) === String(item.filaAsistencia)) ||
-      (String(row.CODIGO) === String(item.codigo) && String(row.FECHA) === String(item.fecha));
-    if (!matchesRow) return row;
-    return {
-      ...row,
-      'Decisión auditoría eventualidad': decisionLabels[decision] ?? decision,
-      'Tiempo decidido en auditoría': formatMinutes(minutes),
-      'Estado eventualidad externa': item.estadoEventualidadOriginal,
-      'Comentario eventualidad externa': item.comentario,
-      'Estado final': [row['Estado final'], `Auditoría: ${resolution}`].filter(Boolean).join('; '),
-    };
-  });
+  const processedRows = metadata.skipProcessedRows
+    ? result.processedRows ?? []
+    : (result.processedRows ?? []).map((row) => {
+        const matchesRow =
+          (item.filaAsistencia && String(row['#']) === String(item.filaAsistencia)) ||
+          (String(row.CODIGO) === String(item.codigo) && String(row.FECHA) === String(item.fecha));
+        if (!matchesRow) return row;
+        return {
+          ...row,
+          'Decisión auditoría eventualidad': decisionLabels[decision] ?? decision,
+          'Tiempo decidido en auditoría': formatMinutes(minutes),
+          'Estado eventualidad externa': item.estadoEventualidadOriginal,
+          'Comentario eventualidad externa': item.comentario,
+          'Estado final': [row['Estado final'], `Auditoría: ${resolution}`]
+            .filter(Boolean)
+            .join('; '),
+        };
+      });
 
   return {
     ...result,
@@ -508,7 +569,7 @@ export function applyAuditAdjustment(result, employeeAudit, bucket, options = {}
   return recalculateAuditAndSummaries({
     ...result,
     summaryByEmployee,
-  });
+  }, { affectedEmployee: employeeAudit });
 }
 
 export function applyManualIrregularPunch(result, employeeAudit, detail = {}) {
@@ -635,7 +696,7 @@ export function applyManualIrregularPunch(result, employeeAudit, detail = {}) {
       ...(result.events ?? {}),
       ponchesIrregulares: [...(result.events?.ponchesIrregulares ?? []), poncheRow],
     },
-  });
+  }, { affectedEmployee: employeeAudit });
 }
 
 export function resolveEventualityAuditItem(result, itemId, resolution = 'Revisado por el usuario') {
@@ -661,7 +722,7 @@ export function resolveEventualityAuditItem(result, itemId, resolution = 'Revisa
   });
 }
 
-export function applyEventualityAuditDecision(result, item, decision, options = {}) {
+function applyEventualityAuditDecisionCore(result, item, decision, options = {}) {
   if (!result?.eventualityAudit?.enabled || !item?.id) return result;
 
   const minutes = Math.max(
@@ -678,49 +739,14 @@ export function applyEventualityAuditDecision(result, item, decision, options = 
   );
 
   if (decision === 'confirm') {
-    return recalculateAuditAndSummaries(
-      markEventualityDecision(
-        result,
-        item,
-        decision,
-        minutes,
-        'Confirmado sin cambios',
-        item.appliedDecision ?? item.clasificacionActual ?? 'none',
-      ),
-    );
-  }
-
-  if (decision === 'irregular') {
-    const irregularResult = applyManualIrregularPunch(
+    return markEventualityDecision(
       result,
-      {
-        codigo: item.codigo,
-        nombre: item.nombre,
-        ubicacion: item.ubicacion,
-      },
-      {
-        fila: item.filaAsistencia,
-        fecha: item.fecha,
-        dia: item.dia,
-        entrada: item.entrada,
-        salida: item.salida,
-        observacion: item.observacionAsistencia || item.comentario,
-        horasEsperadas: formatMinutes(item.horasEsperadasMin),
-        horasReconocidas: formatMinutes(item.horasReconocidasMin),
-        tiempoJustificado: formatMinutes(item.tiempoJustificadoMin),
-        tiempoNoJustificado: formatMinutes(item.tiempoNoJustificadoMin),
-        estadoFinal: item.estadoAsistencia,
-      },
-    );
-    return recalculateAuditAndSummaries(
-      markEventualityDecision(
-        irregularResult,
-        item,
-        decision,
-        minutes,
-        'Reclasificado como ponchado irregular',
-        'irregular',
-      ),
+      item,
+      decision,
+      minutes,
+      options.automatic ? 'Confirmado automÃ¡ticamente sin cambios' : 'Confirmado sin cambios',
+      item.appliedDecision ?? item.clasificacionActual ?? 'none',
+      options,
     );
   }
 
@@ -765,17 +791,141 @@ export function applyEventualityAuditDecision(result, item, decision, options = 
     return next;
   });
 
-  return recalculateAuditAndSummaries(
-    markEventualityDecision(
-      {
-        ...result,
-        summaryByEmployee,
-      },
-      item,
-      decision,
-      minutes,
-      undefined,
-      targetBucket,
-    ),
+  return markEventualityDecision(
+    {
+      ...result,
+      summaryByEmployee,
+    },
+    item,
+    decision,
+    minutes,
+    options.automatic
+      ? `Clasificado automÃ¡ticamente como ${targetBucket === 'justified' ? 'justificado' : 'no justificado'}`
+      : undefined,
+    targetBucket,
+    options,
   );
+}
+
+export function applyEventualityAuditDecision(result, item, decision, options = {}) {
+  if (!result?.eventualityAudit?.enabled || !item?.id) return result;
+
+  if (decision === 'irregular') {
+    const irregularResult = applyManualIrregularPunch(
+      result,
+      {
+        codigo: item.codigo,
+        nombre: item.nombre,
+        ubicacion: item.ubicacion,
+      },
+      {
+        fila: item.filaAsistencia,
+        fecha: item.fecha,
+        dia: item.dia,
+        entrada: item.entrada,
+        salida: item.salida,
+        observacion: item.observacionAsistencia || item.comentario,
+        horasEsperadas: formatMinutes(item.horasEsperadasMin),
+        horasReconocidas: formatMinutes(item.horasReconocidasMin),
+        tiempoJustificado: formatMinutes(item.tiempoJustificadoMin),
+        tiempoNoJustificado: formatMinutes(item.tiempoNoJustificadoMin),
+        estadoFinal: item.estadoAsistencia,
+      },
+    );
+    return recalculateAuditAndSummaries(
+      markEventualityDecision(
+        irregularResult,
+        item,
+        decision,
+        Math.max(0, Math.round(Number(options.minutes ?? item.tiempoSugeridoMin ?? 0))),
+        'Reclasificado como ponchado irregular',
+        'irregular',
+      ),
+      { affectedEmployee: item },
+    );
+  }
+
+  return recalculateAuditAndSummaries(
+    applyEventualityAuditDecisionCore(result, item, decision, options),
+    { affectedEmployee: item },
+  );
+}
+
+const AUTOMATIC_EVENT_TYPES = new Set([
+  'permiso',
+  'licencia',
+  'ausencia',
+  'tardanza',
+  'salida_temprana',
+]);
+
+export function applyAutomaticEventualityDecisions(result) {
+  const items = result?.eventualityAudit?.items ?? [];
+  const eligible = items.filter(
+    (item) =>
+      !item.resolved &&
+      item.status === 'confirmado' &&
+      !item.pendingTime &&
+      item.sourceMatch &&
+      item.tipoExterno &&
+      Number(item.tiempoSugeridoMin || 0) > 0,
+  );
+  if (!eligible.length) return recalculateAuditAndSummaries(result);
+
+  let nextResult = result;
+  let automaticCount = 0;
+  eligible.forEach((originalItem) => {
+    const item = nextResult.eventualityAudit.items.find((current) => current.id === originalItem.id);
+    if (!item) return;
+    const canReclassify = AUTOMATIC_EVENT_TYPES.has(item.tipoExterno);
+    const decision = canReclassify && ['justified', 'unjustified'].includes(item.recomendacion)
+      ? item.recomendacion
+      : 'confirm';
+    if (decision === 'confirm' && canReclassify && !item.recomendacion) return;
+    nextResult = applyEventualityAuditDecisionCore(nextResult, item, decision, {
+      minutes: item.tiempoSugeridoMin,
+      automatic: true,
+      skipProcessedRows: true,
+    });
+    automaticCount += 1;
+  });
+
+  if (!automaticCount) return recalculateAuditAndSummaries(result);
+  const automaticItems = nextResult.eventualityAudit.items.filter((item) => item.automatic);
+  const automaticByRow = new Map();
+  automaticItems.forEach((item) => {
+    const key = item.filaAsistencia
+      ? `fila:${item.filaAsistencia}`
+      : `empleado:${item.codigo}:${item.fecha}`;
+    if (!automaticByRow.has(key)) automaticByRow.set(key, []);
+    automaticByRow.get(key).push(item);
+  });
+  const processedRows = (nextResult.processedRows ?? []).map((row) => {
+    const byRow = automaticByRow.get(`fila:${row['#']}`) ?? [];
+    const matches = byRow.length
+      ? byRow
+      : automaticByRow.get(`empleado:${row.CODIGO}:${row.FECHA}`) ?? [];
+    if (!matches.length) return row;
+    return {
+      ...row,
+      'DecisiÃ³n auditorÃ­a eventualidad': matches
+        .map((item) => item.decision === 'justified' ? 'Justificado' : item.decision === 'unjustified' ? 'No justificado' : 'Confirmado sin cambios')
+        .join('; '),
+      'Tiempo decidido en auditorÃ­a': matches.map((item) => formatMinutes(item.appliedMinutes)).join('; '),
+      'Estado final': [
+        row['Estado final'],
+        ...matches.map((item) => `AuditorÃ­a automÃ¡tica: ${item.resolution}`),
+      ].filter(Boolean).join('; '),
+    };
+  });
+  const refreshed = refreshEventualityReconciliation(nextResult.eventualityAudit);
+  refreshed.stats = {
+    ...refreshed.stats,
+    automaticProcessed: automaticCount,
+  };
+  return recalculateAuditAndSummaries({
+    ...nextResult,
+    processedRows,
+    eventualityAudit: refreshed,
+  });
 }

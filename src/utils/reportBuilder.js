@@ -81,6 +81,7 @@ function pickEventualityAuditRow(row) {
     PRIORIDAD: row.priority,
     ESTADO: row.status,
     RESUELTO: row.resolved ? 'SI' : 'NO',
+    AUTOMATICO: row.automatic ? 'SI' : 'NO',
     CODIGO: row.codigo,
     NOMBRE: row.nombre,
     UBICACION: row.ubicacion,
