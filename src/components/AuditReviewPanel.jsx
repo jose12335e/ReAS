@@ -85,12 +85,16 @@ function AdjustmentButton({ children, disabled, onClick, tone = 'teal' }) {
   );
 }
 
-function EventualityReconciliation({ reconciliation, disabled, onResolve }) {
+function EventualityReconciliation({ reconciliation, disabled, onDecision }) {
   const [showAll, setShowAll] = useState(false);
+  const [manualTimes, setManualTimes] = useState({});
   if (!reconciliation?.enabled) return null;
 
-  const pending = reconciliation.pendingItems ?? [];
-  const visibleItems = showAll ? pending : pending.slice(0, 20);
+  const items = reconciliation.items ?? [];
+  const orderedItems = [...items].sort(
+    (a, b) => Number(a.resolved) - Number(b.resolved) || a.priority - b.priority,
+  );
+  const visibleItems = showAll ? orderedItems : orderedItems.slice(0, 25);
   const statusStyles = {
     tipo_no_reconocido: 'border-rose-300 bg-rose-50 text-rose-800',
     tipo_diferente: 'border-rose-300 bg-rose-50 text-rose-800',
@@ -118,30 +122,40 @@ function EventualityReconciliation({ reconciliation, disabled, onResolve }) {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-          <MetricPill label="Confirmadas" value={reconciliation.stats?.confirmed ?? 0} tone="green" />
-          <MetricPill label="Pendientes" value={reconciliation.stats?.pending ?? 0} tone="rose" />
+          <MetricPill label="Coinciden" value={reconciliation.stats?.sourceMatches ?? reconciliation.stats?.confirmed ?? 0} tone="green" />
+          <MetricPill label="Por revisar" value={reconciliation.stats?.pending ?? 0} tone="rose" />
           <MetricPill label="Tipo diferente" value={reconciliation.stats?.differentType ?? 0} tone="amber" />
           <MetricPill label="Con -1" value={reconciliation.stats?.pendingTime ?? 0} tone="amber" />
         </div>
       </div>
 
-      {pending.length ? (
+      {items.length ? (
         <>
           <div className="mt-4 flex items-start gap-2 rounded-lg border border-violet-200 bg-white p-3 text-sm text-violet-950">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" />
             <span>
-              Estos casos se presentan primero porque una fuente no confirma a la otra. El Excel de eventualidades
-              tiene prioridad para clasificar; revisa la diferencia y luego valida el cuadre de horas.
+              Aquí aparecen todas las eventualidades. Las diferencias se ordenan primero; después aparecen las que
+              coinciden para que confirmes su estado, comentario, tiempo y clasificación final.
             </span>
           </div>
           <div className="mt-3 grid gap-3">
-            {visibleItems.map((item) => (
-              <article
-                key={item.id}
-                className={`rounded-lg border p-3 ${statusStyles[item.status] ?? 'border-slate-200 bg-white text-slate-800'}`}
-              >
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0">
+            {visibleItems.map((item) => {
+              const timeValue = manualTimes[item.id] ?? formatMinutes(
+                item.appliedMinutes ?? item.tiempoSugeridoMin ?? item.horasEsperadasMin ?? 0,
+              );
+              const timeMinutes = Math.abs(parseDurationToMinutes(timeValue));
+              const lockedAsIrregular = item.resolved && item.appliedDecision === 'irregular';
+              return (
+                <article
+                  key={item.id}
+                  className={`rounded-lg border p-3 ${
+                    item.resolved
+                      ? 'border-emerald-200 bg-emerald-50/70 text-emerald-950'
+                      : statusStyles[item.status] ?? 'border-slate-200 bg-white text-slate-800'
+                  }`}
+                >
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold">{item.nombre || 'Empleado sin nombre'}</span>
                       <span className="rounded bg-white/80 px-2 py-0.5 text-xs font-semibold ring-1 ring-black/10">
@@ -150,6 +164,11 @@ function EventualityReconciliation({ reconciliation, disabled, onResolve }) {
                       <span className="rounded bg-white/80 px-2 py-0.5 text-xs font-semibold ring-1 ring-black/10">
                         {item.fecha}
                       </span>
+                      {item.resolved ? (
+                        <span className="rounded bg-emerald-700 px-2 py-0.5 text-xs font-semibold text-white">
+                          Revisado: {item.resolution}
+                        </span>
+                      ) : null}
                     </div>
                     <p className="mt-1 text-sm font-medium">{item.reason}</p>
                     <div className="mt-2 grid gap-x-5 gap-y-1 text-xs sm:grid-cols-2 xl:grid-cols-4">
@@ -157,44 +176,86 @@ function EventualityReconciliation({ reconciliation, disabled, onResolve }) {
                       <span><b>En asistencia:</b> {item.tiposAsistenciaLabel}</span>
                       <span><b>Cantidad días:</b> {item.cantidadDias ?? 'vacío'}</span>
                       <span><b>Cantidad horas:</b> {item.cantidadHoras ?? 'vacío'}</span>
+                      <span><b>Estado del archivo:</b> {item.estadoEventualidadOriginal || 'Sin estado'}</span>
+                      <span><b>Recomendación:</b> {item.recomendacion === 'justified' ? 'Justificado' : item.recomendacion === 'unjustified' ? 'No justificado' : 'Revisión manual'}</span>
+                      <span className="sm:col-span-2"><b>Comentario:</b> {item.comentario || 'Sin comentario'}</span>
                       <span><b>Ubicación:</b> {item.ubicacion || 'Sin ubicación'}</span>
+                      <span><b>Clasificación actual:</b> {item.clasificacionActual || 'Ninguna'}</span>
+                      <span><b>Entrada / salida:</b> {item.entrada || 'vacía'} / {item.salida || 'vacía'}</span>
+                      <span><b>Estado asistencia:</b> {item.estadoAsistencia || 'Sin estado'}</span>
                       <span><b>Fila asistencia:</b> {item.filaAsistencia || 'No encontrada'}</span>
                       <span><b>Hoja eventualidades:</b> {item.hoja || 'No disponible'}</span>
                       <span><b>Fila eventualidades:</b> {item.filaEventualidades || 'No encontrada'}</span>
                     </div>
+                    </div>
+                    <div className="grid shrink-0 gap-2 xl:w-[420px]">
+                      <label className="grid gap-1 text-xs font-semibold uppercase text-slate-600">
+                        Tiempo a aplicar
+                        <input
+                          className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
+                          value={timeValue}
+                          placeholder="HH:MM:SS"
+                          disabled={disabled || lockedAsIrregular}
+                          onChange={(event) =>
+                            setManualTimes((current) => ({ ...current, [item.id]: event.target.value }))
+                          }
+                        />
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <AdjustmentButton
+                          disabled={disabled || lockedAsIrregular || !timeMinutes}
+                          onClick={() => onDecision(item, 'justified', { minutes: timeMinutes })}
+                        >
+                          Pasar a justificado
+                        </AdjustmentButton>
+                        <AdjustmentButton
+                          tone="navy"
+                          disabled={disabled || lockedAsIrregular || !timeMinutes}
+                          onClick={() => onDecision(item, 'unjustified', { minutes: timeMinutes })}
+                        >
+                          Pasar a no justificado
+                        </AdjustmentButton>
+                        <AdjustmentButton
+                          tone="amber"
+                          disabled={disabled || item.resolved}
+                          onClick={() => onDecision(item, 'irregular', { minutes: timeMinutes })}
+                        >
+                          Ponchado irregular
+                        </AdjustmentButton>
+                        <AdjustmentButton
+                          disabled={disabled || lockedAsIrregular}
+                          onClick={() => onDecision(item, 'confirm', { minutes: timeMinutes })}
+                        >
+                          Confirmar actual
+                        </AdjustmentButton>
+                      </div>
+                      <button
+                        className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        type="button"
+                        disabled={disabled || lockedAsIrregular}
+                        onClick={() => onDecision(item, 'discard', { minutes: timeMinutes })}
+                      >
+                        Descartar esta eventualidad
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    className="shrink-0 rounded-md bg-violet-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                    type="button"
-                    disabled={disabled}
-                    onClick={() =>
-                      onResolve(
-                        item,
-                        item.status === 'requiere_confirmacion'
-                          ? 'Tiempo -1 confirmado y revisado por el usuario'
-                          : 'Diferencia de eventualidad revisada por el usuario',
-                      )
-                    }
-                  >
-                    {item.status === 'requiere_confirmacion' ? 'Confirmar y continuar' : 'Marcar revisado'}
-                  </button>
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
-          {pending.length > 20 ? (
+          {items.length > 25 ? (
             <button
               className="mt-3 text-sm font-semibold text-violet-700 hover:text-violet-900"
               type="button"
               onClick={() => setShowAll((current) => !current)}
             >
-              {showAll ? 'Mostrar menos' : `Mostrar los ${pending.length} casos pendientes`}
+              {showAll ? 'Mostrar menos' : `Mostrar las ${items.length} eventualidades`}
             </button>
           ) : null}
         </>
       ) : (
         <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">
-          Todas las eventualidades fueron confirmadas o revisadas.
+          El archivo no contiene eventualidades procesables para el mes seleccionado.
         </div>
       )}
     </div>
@@ -450,7 +511,7 @@ export default function AuditReviewPanel({
   disabled,
   onAdjust,
   onAddIrregularPunch,
-  onResolveEventuality,
+  onEventualityDecision,
 }) {
   const pending = useMemo(() => audit?.pendingEmployees ?? [], [audit]);
   if (!audit) return null;
@@ -484,7 +545,7 @@ export default function AuditReviewPanel({
       <EventualityReconciliation
         reconciliation={audit.eventuality}
         disabled={disabled}
-        onResolve={onResolveEventuality}
+        onDecision={onEventualityDecision}
       />
 
       {pending.length ? (

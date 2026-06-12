@@ -261,6 +261,14 @@ function buildProcessedOutput(row, metrics) {
     'Eventualidad externa': row.externalEventualities
       ?.map((event) => event.tipoLabel || event.tipoOriginal)
       .join('; '),
+    'Estado eventualidad externa': row.externalEventualities
+      ?.map((event) => event.estadoOriginal)
+      .filter(Boolean)
+      .join('; '),
+    'Comentario eventualidad externa': row.externalEventualities
+      ?.map((event) => event.comentario)
+      .filter(Boolean)
+      .join('; '),
     'Tipos de eventualidad detectados': row.detectedEventTypes?.join('; '),
     'Tipos de eventualidad en asistencia': row.attendanceSourceTypes?.join('; '),
     'IDs eventualidades externas': row.externalEventualities?.map((event) => event.id).join('; '),
@@ -271,7 +279,17 @@ function buildProcessedOutput(row, metrics) {
     'Horas trabajadas reales': minutesToHours(metrics.horasTrabajadasRealesMin),
     'Horas trabajadas reconocidas': minutesToHours(metrics.horasTrabajadasReconocidasMin),
     'Tiempo tardanza': formatMinutes(metrics.tiempoTardanzaMin),
+    'Tiempo tardanza justificada': formatMinutes(metrics.tiempoTardanzaJustificadaMin),
+    'Tiempo tardanza no justificada': formatMinutes(metrics.tiempoTardanzaNoJustificadaMin),
     'Tiempo salida temprana': formatMinutes(metrics.tiempoSalidaTempranaMin),
+    'Tiempo salida temprana justificada': formatMinutes(
+      metrics.tiempoSalidaTempranaJustificadaMin,
+    ),
+    'Tiempo salida temprana no justificada': formatMinutes(
+      metrics.tiempoSalidaTempranaNoJustificadaMin,
+    ),
+    'Tiempo ausencia justificada': formatMinutes(metrics.tiempoAusenciaJustificadaMin),
+    'Tiempo ausencia no justificada': formatMinutes(metrics.tiempoAusenciaNoJustificadaMin),
     'Tiempo no trabajado justificado': formatMinutes(metrics.tiempoNoTrabajadoJustificadoMin),
     'Tiempo no trabajado no justificado': formatMinutes(metrics.tiempoNoTrabajadoNoJustificadoMin),
     'Tasa ausentismo':

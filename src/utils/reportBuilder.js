@@ -1,3 +1,10 @@
+function formatAuditMinutes(value) {
+  const total = Math.max(0, Math.round(Number(value || 0)));
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+}
+
 function pickEmployeeExportRow(row) {
   const isAggregateRow =
     !row.codigo && /^(TOTAL|SUBTOTAL)/i.test(String(row.nombre ?? '').trim());
@@ -82,6 +89,18 @@ function pickEventualityAuditRow(row) {
     'EVENTUALIDAD EN ASISTENCIA': row.tiposAsistenciaLabel,
     'CANTIDAD DIAS': row.cantidadDias,
     'CANTIDAD HORAS': row.cantidadHoras,
+    'ESTADO EVENTUALIDAD': row.estadoEventualidadOriginal,
+    RECOMENDACION:
+      row.recomendacion === 'justified'
+        ? 'Justificado'
+        : row.recomendacion === 'unjustified'
+          ? 'No justificado'
+          : 'Revisión manual',
+    COMENTARIO: row.comentario,
+    'CLASIFICACION ACTUAL': row.clasificacionActual,
+    'TIEMPO SUGERIDO': formatAuditMinutes(row.tiempoSugeridoMin),
+    DECISION: row.decision,
+    'TIEMPO APLICADO': row.appliedMinutes == null ? '' : formatAuditMinutes(row.appliedMinutes),
     'FILA ASISTENCIA': row.filaAsistencia,
     'HOJA EVENTUALIDADES': row.hoja,
     'FILA EVENTUALIDADES': row.filaEventualidades,

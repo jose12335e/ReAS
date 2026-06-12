@@ -29,8 +29,8 @@ import { scheduleConfig } from '../config/scheduleConfig.js';
 import { SESSION_TTL_HOURS, useAttendanceStore } from '../store/attendanceStore.js';
 import {
   applyAuditAdjustment,
+  applyEventualityAuditDecision,
   applyManualIrregularPunch,
-  resolveEventualityAuditItem,
 } from '../utils/auditRules.js';
 import {
   validateColumnMapping,
@@ -451,10 +451,10 @@ export default function Dashboard({ activeUser, onLogout }) {
     });
   }
 
-  function handleResolveEventuality(item, resolution) {
+  function handleEventualityDecision(item, decision, options) {
     setResult((current) => {
       if (!current) return current;
-      const adjustedResult = resolveEventualityAuditItem(current, item.id, resolution);
+      const adjustedResult = applyEventualityAuditDecision(current, item, decision, options);
       try {
         setLastResult(adjustedResult);
       } catch {
@@ -744,7 +744,7 @@ export default function Dashboard({ activeUser, onLogout }) {
                 disabled={isBusy}
                 onAdjust={handleAuditAdjustment}
                 onAddIrregularPunch={handleManualIrregularPunch}
-                onResolveEventuality={handleResolveEventuality}
+                onEventualityDecision={handleEventualityDecision}
               />
             ) : null}
           </section>

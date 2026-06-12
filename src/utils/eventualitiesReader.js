@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { getEmployeeCodeKeys } from './extendedScheduleReader.js';
-import { parseDateValue } from './timeUtils.js';
+import { parseDateValue, parseDurationToMinutes } from './timeUtils.js';
 
 const HEADER_ALIASES = {
   code: ['CODIGO', 'CODIGO EMPLEADO', 'CODIGO DE EMPLEADO', 'COD EMPLEADO', 'ID EMPLEADO'],
@@ -11,6 +11,15 @@ const HEADER_ALIASES = {
   endDate: ['FECHA FIN', 'FECHA DE FIN', 'HASTA'],
   days: ['CANTIDAD DIAS', 'CANTIDAD DE DIAS', 'DIAS', 'NO. DIAS'],
   hours: ['CANTIDAD HORAS', 'CANTIDAD DE HORAS', 'HORAS', 'NO. HORAS'],
+  status: [
+    'ESTADO DE LA EVENTUALIDAD',
+    'ESTADO EVENTUALIDAD',
+    'ESTADO',
+    'ESTATUS',
+    'APROBACION',
+    'APROBADO',
+  ],
+  comment: ['COMENTARIO', 'COMENTARIOS', 'OBSERVACION', 'OBSERVACIONES', 'NOTA', 'DETALLE'],
 };
 
 export const EVENTUALITY_TYPES = {
@@ -98,6 +107,21 @@ export function normalizeEventualityType(value = '') {
 
 export function eventualityTypeLabel(type) {
   return TYPE_LABELS[type] ?? 'Tipo no reconocido';
+}
+
+export function normalizeEventualityStatus(value = '') {
+  const normalized = normalizeText(value);
+  if (!normalized) return { key: 'sin_estado', label: 'Sin estado', recommendation: '' };
+  if (/NO\s+JUSTIFIC|INJUSTIFIC|RECHAZ|NO\s+APROBAD|DENEGAD/.test(normalized)) {
+    return { key: 'no_justificado', label: clean(value), recommendation: 'unjustified' };
+  }
+  if (/JUSTIFIC|APROBAD|AUTORIZAD|ACEPTAD/.test(normalized)) {
+    return { key: 'justificado', label: clean(value), recommendation: 'justified' };
+  }
+  if (/PENDIENT|EN\s+PROCESO|REVISION/.test(normalized)) {
+    return { key: 'pendiente', label: clean(value), recommendation: '' };
+  }
+  return { key: 'otro', label: clean(value), recommendation: '' };
 }
 
 function formatDateKey(value) {
@@ -206,6 +230,9 @@ export function parseEventualitiesWorkbook(arrayBuffer, fileName, evaluationMont
       const fechas = datesInRange(row?.[mapping.startDate], row?.[mapping.endDate]);
       const cantidadDias = parseQuantity(row?.[mapping.days]);
       const cantidadHoras = parseQuantity(row?.[mapping.hours]);
+      const rawStatus = clean(row?.[mapping.status]);
+      const status = normalizeEventualityStatus(rawStatus);
+      const comment = clean(row?.[mapping.comment]);
 
       if (!codigo || !fechas.length || !rawType) return;
       if (!tipo) unknownTypes += 1;
@@ -234,6 +261,10 @@ export function parseEventualitiesWorkbook(arrayBuffer, fileName, evaluationMont
           exactMinutes: positiveHours ? Math.round(positiveHours * 60) : null,
           fullDayCount: positiveDays || null,
           pendingTime,
+          estado: status.key,
+          estadoOriginal: status.label,
+          recomendacion: status.recommendation,
+          comentario: comment,
           source: 'Excel de eventualidades',
         });
       });
@@ -295,6 +326,7 @@ function buildReconciliationItem({
   externalRecord,
   attendanceTypes = [],
   sourceRow,
+  attendance,
 }) {
   const statusMessages = {
     tipo_no_reconocido: 'El tipo del Excel de eventualidades no fue reconocido.',
@@ -305,11 +337,30 @@ function buildReconciliationItem({
     confirmado: 'La eventualidad coincide por codigo, fecha y tipo.',
   };
 
+  const externalSuggestedMinutes =
+    externalRecord?.exactMinutes ?? (externalRecord?.fullDayCount ? 8 * 60 : null);
+  const eventType = externalRecord?.tipo || attendanceTypes[0] || '';
+  const eventTime = attendance?.eventTimes?.[eventType] ?? {};
+  const attendanceSuggestedMinutes =
+    eventTime.justifiedMinutes ||
+    eventTime.unjustifiedMinutes ||
+    (eventType === EVENTUALITY_TYPES.ABSENCE ? attendance?.expectedMinutes : 0) ||
+    0;
+  const suggestedMinutes = externalSuggestedMinutes ?? attendanceSuggestedMinutes;
+  const currentBucket = /ponche irregular|ponche incompleto/i.test(attendance?.finalState ?? '')
+    ? 'irregular'
+    : eventTime.justifiedMinutes > 0
+      ? 'justified'
+      : eventTime.unjustifiedMinutes > 0
+        ? 'unjustified'
+        : 'none';
+
   return {
     id,
     status,
     priority: reconciliationPriority(status),
-    resolved: status === 'confirmado',
+    resolved: false,
+    sourceMatch: status === 'confirmado',
     codigo: code,
     nombre: name || externalRecord?.nombre || '',
     ubicacion: location || externalRecord?.ubicacion || '',
@@ -324,11 +375,32 @@ function buildReconciliationItem({
     cantidadDias: externalRecord?.cantidadDias ?? null,
     cantidadHoras: externalRecord?.cantidadHoras ?? null,
     tiempoExactoMin: externalRecord?.exactMinutes ?? null,
+    tiempoSugeridoMin: suggestedMinutes,
+    clasificacionActual: currentBucket,
+    tiempoClasificadoActualMin:
+      currentBucket === 'justified'
+        ? eventTime.justifiedMinutes ?? 0
+        : currentBucket === 'unjustified'
+          ? eventTime.unjustifiedMinutes ?? 0
+          : 0,
+    estadoEventualidad: externalRecord?.estado ?? 'sin_estado',
+    estadoEventualidadOriginal: externalRecord?.estadoOriginal ?? 'Sin estado',
+    recomendacion: externalRecord?.recomendacion ?? '',
+    comentario: externalRecord?.comentario ?? '',
     fechaInicio: externalRecord?.fechaInicio ?? date,
     fechaFin: externalRecord?.fechaFin ?? date,
     hoja: externalRecord?.sheetName ?? '',
     filaEventualidades: externalRecord?.sourceRow ?? '',
     filaAsistencia: sourceRow ?? '',
+    dia: attendance?.day ?? '',
+    entrada: attendance?.entry ?? '',
+    salida: attendance?.exit ?? '',
+    observacionAsistencia: attendance?.observation ?? '',
+    estadoAsistencia: attendance?.finalState ?? '',
+    horasEsperadasMin: attendance?.expectedMinutes ?? 0,
+    horasReconocidasMin: attendance?.recognizedMinutes ?? 0,
+    tiempoJustificadoMin: attendance?.justifiedMinutes ?? 0,
+    tiempoNoJustificadoMin: attendance?.unjustifiedMinutes ?? 0,
     reason: statusMessages[status] ?? 'Revisar coincidencia.',
   };
 }
@@ -355,6 +427,41 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
       name: clean(row.NOMBRE),
       location: clean(row.UBICACION),
       sourceRow: row['#'],
+      day: clean(row.DIA),
+      entry: clean(row['Hora entrada']),
+      exit: clean(row['Hora salida']),
+      observation: clean(row['Observación original']),
+      finalState: clean(row['Estado final']),
+      expectedMinutes: Math.round(Number(row['Horas esperadas'] || 0) * 60),
+      recognizedMinutes: Math.round(Number(row['Horas trabajadas reconocidas'] || 0) * 60),
+      justifiedMinutes: parseDurationToMinutes(row['Tiempo no trabajado justificado']),
+      unjustifiedMinutes: parseDurationToMinutes(row['Tiempo no trabajado no justificado']),
+      eventTimes: {
+        [EVENTUALITY_TYPES.TARDINESS]: {
+          justifiedMinutes: parseDurationToMinutes(row['Tiempo tardanza justificada']),
+          unjustifiedMinutes: parseDurationToMinutes(row['Tiempo tardanza no justificada']),
+        },
+        [EVENTUALITY_TYPES.EARLY_EXIT]: {
+          justifiedMinutes: parseDurationToMinutes(row['Tiempo salida temprana justificada']),
+          unjustifiedMinutes: parseDurationToMinutes(row['Tiempo salida temprana no justificada']),
+        },
+        [EVENTUALITY_TYPES.ABSENCE]: {
+          justifiedMinutes: parseDurationToMinutes(row['Tiempo ausencia justificada']),
+          unjustifiedMinutes: parseDurationToMinutes(row['Tiempo ausencia no justificada']),
+        },
+        [EVENTUALITY_TYPES.PERMIT]: {
+          justifiedMinutes: /permiso/i.test(row['Estado final'] ?? '')
+            ? parseDurationToMinutes(row['Tiempo no trabajado justificado'])
+            : 0,
+          unjustifiedMinutes: 0,
+        },
+        [EVENTUALITY_TYPES.LICENSE]: {
+          justifiedMinutes: /licencia/i.test(row['Estado final'] ?? '')
+            ? parseDurationToMinutes(row['Tiempo no trabajado justificado'])
+            : 0,
+          unjustifiedMinutes: 0,
+        },
+      },
       types: splitDetectedTypes(
         row['Tipos de eventualidad en asistencia'] || row['Tipos de eventualidad detectados'],
       ),
@@ -398,6 +505,7 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
           externalRecord: record,
           attendanceTypes,
           sourceRow: attendance?.sourceRow,
+          attendance,
         }),
       );
     });
@@ -416,6 +524,7 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
           externalRecord: externalRecords[0],
           attendanceTypes: [type],
           sourceRow: attendance.sourceRow,
+          attendance,
         }),
       );
     });
@@ -437,6 +546,7 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
     stats: {
       total: items.length,
       confirmed: items.filter((item) => item.status === 'confirmado').length,
+      sourceMatches: items.filter((item) => item.sourceMatch).length,
       pending: pendingItems.length,
       onlyEventualities: items.filter((item) => item.status === 'solo_eventualidades').length,
       onlyAttendance: items.filter((item) => item.status === 'solo_asistencia').length,
@@ -457,6 +567,7 @@ export function refreshEventualityReconciliation(reconciliation = {}) {
       ...(reconciliation.stats ?? {}),
       total: items.length,
       confirmed: items.filter((item) => item.status === 'confirmado' || item.resolved).length,
+      sourceMatches: items.filter((item) => item.sourceMatch).length,
       pending: pendingItems.length,
       onlyEventualities: pendingItems.filter((item) => item.status === 'solo_eventualidades').length,
       onlyAttendance: pendingItems.filter((item) => item.status === 'solo_asistencia').length,
