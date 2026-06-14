@@ -469,7 +469,11 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
   });
 
   const externalByKey = new Map();
-  eventualities.records.forEach((record) => {
+  const auditableExternalRecords = eventualities.records.filter(
+    (record) => record.tipo !== EVENTUALITY_TYPES.TRAVEL,
+  );
+  const ignoredTravelRecords = eventualities.records.length - auditableExternalRecords.length;
+  auditableExternalRecords.forEach((record) => {
     const key = eventualityIndexKey(record.codigo, record.fecha);
     if (!key) return;
     if (!externalByKey.has(key)) externalByKey.set(key, []);
@@ -486,7 +490,9 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
   keys.forEach((key) => {
     const attendance = attendanceByKey.get(key);
     const externalRecords = externalByKey.get(key) ?? [];
-    const attendanceTypes = attendance?.types ?? [];
+    const attendanceTypes = (attendance?.types ?? []).filter(
+      (type) => type !== EVENTUALITY_TYPES.TRAVEL,
+    );
     const externalTypes = new Set(externalRecords.map((record) => record.tipo).filter(Boolean));
     const hasAnyTypeMatch = attendanceTypes.some((type) => externalTypes.has(type));
 
@@ -557,12 +563,19 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
       differentType: items.filter((item) => item.status === 'tipo_diferente').length,
       pendingTime: items.filter((item) => item.status === 'requiere_confirmacion').length,
       ignoredExternalRecords,
+      ignoredTravelRecords,
     },
   };
 }
 
 export function refreshEventualityReconciliation(reconciliation = {}) {
-  const items = reconciliation.items ?? [];
+  const items = (reconciliation.items ?? []).filter((item) => {
+    if (item.tipoExterno === EVENTUALITY_TYPES.TRAVEL) return false;
+    const attendanceTypes = item.tiposAsistencia ?? [];
+    return !attendanceTypes.length || attendanceTypes.some(
+      (type) => type !== EVENTUALITY_TYPES.TRAVEL,
+    );
+  });
   const pendingItems = items.filter((item) => !item.resolved);
   return {
     ...reconciliation,
@@ -579,6 +592,7 @@ export function refreshEventualityReconciliation(reconciliation = {}) {
       differentType: pendingItems.filter((item) => item.status === 'tipo_diferente').length,
       pendingTime: pendingItems.filter((item) => item.status === 'requiere_confirmacion').length,
       ignoredExternalRecords: reconciliation.stats?.ignoredExternalRecords ?? 0,
+      ignoredTravelRecords: reconciliation.stats?.ignoredTravelRecords ?? 0,
     },
   };
 }

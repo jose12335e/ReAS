@@ -14,6 +14,41 @@ function isExpiredSession(lastSession) {
   return Date.now() - savedAt > SESSION_TTL_MS;
 }
 
+function removeTravelFromStoredAudit(result) {
+  const eventuality = result?.audit?.eventuality ?? result?.eventualityAudit;
+  if (!eventuality?.enabled) return result;
+  const items = (eventuality.items ?? []).filter((item) => {
+    if (item.tipoExterno === 'ver_viatico') return false;
+    const attendanceTypes = item.tiposAsistencia ?? [];
+    return !attendanceTypes.length || attendanceTypes.some((type) => type !== 'ver_viatico');
+  });
+  const pendingItems = items.filter((item) => !item.resolved);
+  const nextEventuality = {
+    ...eventuality,
+    items,
+    pendingItems,
+    stats: {
+      ...(eventuality.stats ?? {}),
+      total: items.length,
+      pending: pendingItems.length,
+    },
+  };
+  const hasDiscrepancies = Boolean(
+    pendingItems.length ||
+    result.audit.pendingEmployees?.length ||
+    result.audit.general?.diferenciaMin,
+  );
+  return {
+    ...result,
+    eventualityAudit: nextEventuality,
+    audit: {
+      ...result.audit,
+      eventuality: nextEventuality,
+      hasDiscrepancies,
+    },
+  };
+}
+
 export const useAttendanceStore = create(
   persist(
     (set, get) => ({
@@ -61,7 +96,7 @@ export const useAttendanceStore = create(
     }),
     {
       name: 'reas-attendance-config',
-      version: 7,
+      version: 8,
       migrate: (persistedState) => {
         const saveSession = persistedState?.saveSession ?? true;
         const expired = isExpiredSession(persistedState?.lastSession);
@@ -72,7 +107,10 @@ export const useAttendanceStore = create(
           dghCode: persistedState?.dghCode || DEFAULT_DGH_CODE,
           exportFilename: persistedState?.exportFilename || DEFAULT_EXPORT_FILENAME,
           saveSession,
-          lastResult: saveSession && !expired ? persistedState?.lastResult || null : null,
+          lastResult:
+            saveSession && !expired
+              ? removeTravelFromStoredAudit(persistedState?.lastResult || null)
+              : null,
           lastSession: saveSession && !expired ? persistedState?.lastSession || null : null,
         };
       },
