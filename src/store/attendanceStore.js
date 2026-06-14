@@ -14,11 +14,23 @@ function isExpiredSession(lastSession) {
   return Date.now() - savedAt > SESSION_TTL_MS;
 }
 
-function removeTravelFromStoredAudit(result) {
+function isIgnoredInformationalEventuality(value = '') {
+  const normalized = String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/#/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+  return /\bD.AS?\s+PENDIENTES?\b/.test(normalized) || /\bSALDO\b/.test(normalized);
+}
+
+function removeIgnoredItemsFromStoredAudit(result) {
   const eventuality = result?.audit?.eventuality ?? result?.eventualityAudit;
   if (!eventuality?.enabled) return result;
   const items = (eventuality.items ?? []).filter((item) => {
     if (item.tipoExterno === 'ver_viatico') return false;
+    if (isIgnoredInformationalEventuality(item.tipoExternoLabel)) return false;
     const attendanceTypes = item.tiposAsistencia ?? [];
     return !attendanceTypes.length || attendanceTypes.some((type) => type !== 'ver_viatico');
   });
@@ -96,7 +108,7 @@ export const useAttendanceStore = create(
     }),
     {
       name: 'reas-attendance-config',
-      version: 8,
+      version: 9,
       migrate: (persistedState) => {
         const saveSession = persistedState?.saveSession ?? true;
         const expired = isExpiredSession(persistedState?.lastSession);
@@ -109,7 +121,7 @@ export const useAttendanceStore = create(
           saveSession,
           lastResult:
             saveSession && !expired
-              ? removeTravelFromStoredAudit(persistedState?.lastResult || null)
+              ? removeIgnoredItemsFromStoredAudit(persistedState?.lastResult || null)
               : null,
           lastSession: saveSession && !expired ? persistedState?.lastSession || null : null,
         };

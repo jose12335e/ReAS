@@ -60,6 +60,11 @@ function clean(value) {
   return String(value ?? '').trim();
 }
 
+function isInformationalEventuality(value = '') {
+  const normalized = normalizeText(value).replace(/#/g, ' ').replace(/\s+/g, ' ').trim();
+  return /\bD.AS?\s+PENDIENTES?\b/.test(normalized) || /\bSALDO\b/.test(normalized);
+}
+
 function findHeader(headers, aliases) {
   const normalizedAliases = aliases.map(normalizeText);
   return (
@@ -203,7 +208,13 @@ export function parseEventualitiesWorkbook(arrayBuffer, fileName, evaluationMont
       records: [],
       recordsByCodeDate: {},
       warnings: [],
-      stats: { sourceRows: 0, dailyRecords: 0, unknownTypes: 0, pendingTime: 0 },
+      stats: {
+        sourceRows: 0,
+        dailyRecords: 0,
+        unknownTypes: 0,
+        pendingTime: 0,
+        ignoredInformationalRows: 0,
+      },
     };
   }
 
@@ -213,6 +224,7 @@ export function parseEventualitiesWorkbook(arrayBuffer, fileName, evaluationMont
   const sheets = [];
   let sourceRows = 0;
   let unknownTypes = 0;
+  let ignoredInformationalRows = 0;
 
   workbook.SheetNames.forEach((sheetName) => {
     const rows = parseSheetRows(workbook, sheetName);
@@ -235,6 +247,10 @@ export function parseEventualitiesWorkbook(arrayBuffer, fileName, evaluationMont
       const comment = clean(row?.[mapping.comment]);
 
       if (!codigo || !fechas.length || !rawType) return;
+      if (isInformationalEventuality(rawType)) {
+        ignoredInformationalRows += 1;
+        return;
+      }
       if (!tipo) unknownTypes += 1;
 
       const positiveHours = cantidadHoras > 0 ? cantidadHoras : 0;
@@ -280,6 +296,11 @@ export function parseEventualitiesWorkbook(arrayBuffer, fileName, evaluationMont
       `${fileName}: ${unknownTypes} registro(s) tienen un tipo de eventualidad no reconocido.`,
     );
   }
+  if (ignoredInformationalRows) {
+    warnings.push(
+      `${fileName}: ${ignoredInformationalRows} fila(s) de dias pendientes o saldo fueron ignoradas.`,
+    );
+  }
 
   return {
     enabled: true,
@@ -293,6 +314,7 @@ export function parseEventualitiesWorkbook(arrayBuffer, fileName, evaluationMont
       dailyRecords: records.length,
       unknownTypes,
       pendingTime: records.filter((record) => record.pendingTime).length,
+      ignoredInformationalRows,
     },
   };
 }
@@ -571,6 +593,7 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
 export function refreshEventualityReconciliation(reconciliation = {}) {
   const items = (reconciliation.items ?? []).filter((item) => {
     if (item.tipoExterno === EVENTUALITY_TYPES.TRAVEL) return false;
+    if (isInformationalEventuality(item.tipoExternoLabel)) return false;
     const attendanceTypes = item.tiposAsistencia ?? [];
     return !attendanceTypes.length || attendanceTypes.some(
       (type) => type !== EVENTUALITY_TYPES.TRAVEL,
