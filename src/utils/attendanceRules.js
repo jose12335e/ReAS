@@ -371,9 +371,9 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
   const recognizedMinutes = hasVerViatico
     ? expectedMinutes
     : Math.min(scheduledRecognizedMinutes, expectedMinutes);
-  const isLate = hasValidPunchPair && entryExpected !== null && entryMinutes > entryExpected;
+  const isLate = !hasVerViatico && hasValidPunchPair && entryExpected !== null && entryMinutes > entryExpected;
   const lateMinutes = isLate ? entryMinutes - entryExpected : 0;
-  const isEarlyExit = hasValidPunchPair && exitExpected !== null && exitMinutes < exitExpected;
+  const isEarlyExit = !hasVerViatico && hasValidPunchPair && exitExpected !== null && exitMinutes < exitExpected;
   const earlyExitMinutes = isEarlyExit ? exitExpected - exitMinutes : 0;
   const externalIsAuthoritative = externalTypes.size > 0;
   const isVacation = externalIsAuthoritative
@@ -388,7 +388,7 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
   const isObservedAbsence = externalIsAuthoritative
     ? externalTypes.has(EVENTUALITY_TYPES.ABSENCE)
     : primaryId === 'ausencia';
-  const overridesIrregularPunch = isLicense || isPermit || isObservedAbsence;
+  const overridesIrregularPunch = hasVerViatico || isLicense || isPermit || isObservedAbsence;
   const hasTardinessObservation =
     externalTypes.has(EVENTUALITY_TYPES.TARDINESS) ||
     observation.matches.some((match) => match.id === 'tardanza');
@@ -426,6 +426,14 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
     metrics.horasEsperadasMin = 0;
     metrics.horasTrabajadasRealesMin = 0;
     metrics.horasTrabajadasReconocidasMin = 0;
+  } else if (hasVerViatico && isWorkday) {
+    metrics.horasEsperadasMin = expectedMinutes;
+    metrics.diasTrabajadosCompletos = 1;
+    metrics.horasTrabajadasRealesMin = realWorkedMinutes || expectedMinutes;
+    metrics.horasTrabajadasReconocidasMin = expectedMinutes;
+    metrics.verViatico = 1;
+    metrics.tiempoNoTrabajadoJustificadoMin = 0;
+    states.push('Trabajo externo / Ver viatico');
   } else if (isVacation && isWorkday) {
     metrics.vacaciones = 1;
     states.push('Vacacion justificada');
@@ -441,14 +449,6 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
   } else if (isIrregular && !overridesIrregularPunch) {
     metrics.ponchesIrregulares = 1;
     states.push('Pendiente revision - ponche irregular');
-  } else if (hasVerViatico && isWorkday) {
-    metrics.horasEsperadasMin = expectedMinutes;
-    metrics.diasTrabajadosCompletos = 1;
-    metrics.horasTrabajadasRealesMin = realWorkedMinutes || expectedMinutes;
-    metrics.horasTrabajadasReconocidasMin = expectedMinutes;
-    metrics.verViatico = 1;
-    metrics.tiempoNoTrabajadoJustificadoMin = 0;
-    states.push('Trabajo externo / Ver viatico');
   } else {
     if (isWorkday) metrics.horasEsperadasMin = expectedMinutes;
 
@@ -568,8 +568,10 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
   );
   if (isLate) attendanceSourceTypes.add(EVENTUALITY_TYPES.TARDINESS);
   if (isEarlyExit) attendanceSourceTypes.add(EVENTUALITY_TYPES.EARLY_EXIT);
-  if (isAbsent && !attendanceSourceTypes.size) attendanceSourceTypes.add(EVENTUALITY_TYPES.ABSENCE);
-  if (isIrregular && !attendanceSourceTypes.size) {
+  if (!hasVerViatico && isAbsent && !attendanceSourceTypes.size) {
+    attendanceSourceTypes.add(EVENTUALITY_TYPES.ABSENCE);
+  }
+  if (!hasVerViatico && isIrregular && !attendanceSourceTypes.size) {
     attendanceSourceTypes.add(EVENTUALITY_TYPES.IRREGULAR_PUNCH);
   }
   const detectedEventTypes = [
