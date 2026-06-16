@@ -48,6 +48,7 @@ const TYPE_LABELS = {
 
 const NON_AUDIT_EVENTUALITY_TYPES = new Set([
   EVENTUALITY_TYPES.TRAVEL,
+  EVENTUALITY_TYPES.HOLIDAY,
   EVENTUALITY_TYPES.IRREGULAR_PUNCH,
 ]);
 
@@ -545,6 +546,9 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
   const ignoredIrregularPunchRecords = eventualities.records.filter(
     (record) => record.tipo === EVENTUALITY_TYPES.IRREGULAR_PUNCH,
   ).length;
+  const ignoredHolidayRecords = eventualities.records.filter(
+    (record) => record.tipo === EVENTUALITY_TYPES.HOLIDAY,
+  ).length;
   auditableExternalRecords.forEach((record) => {
     const key = eventualityIndexKey(record.codigo, record.fecha);
     if (!key) return;
@@ -630,6 +634,7 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
       ignoredExternalRecords,
       ignoredTravelRecords,
       ignoredIrregularPunchRecords,
+      ignoredHolidayRecords,
     },
   };
 }
@@ -653,6 +658,7 @@ export function refreshEventualityReconciliation(reconciliation = {}) {
       ignoredExternalRecords: reconciliation.stats?.ignoredExternalRecords ?? 0,
       ignoredTravelRecords: reconciliation.stats?.ignoredTravelRecords ?? 0,
       ignoredIrregularPunchRecords: reconciliation.stats?.ignoredIrregularPunchRecords ?? 0,
+      ignoredHolidayRecords: reconciliation.stats?.ignoredHolidayRecords ?? 0,
     },
   };
 }
