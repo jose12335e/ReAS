@@ -46,6 +46,11 @@ const TYPE_LABELS = {
   [EVENTUALITY_TYPES.IRREGULAR_PUNCH]: 'Ponche irregular',
 };
 
+const NON_AUDIT_EVENTUALITY_TYPES = new Set([
+  EVENTUALITY_TYPES.TRAVEL,
+  EVENTUALITY_TYPES.IRREGULAR_PUNCH,
+]);
+
 function normalizeText(value = '') {
   return String(value ?? '')
     .normalize('NFD')
@@ -532,9 +537,14 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
 
   const externalByKey = new Map();
   const auditableExternalRecords = eventualities.records.filter(
-    (record) => record.tipo !== EVENTUALITY_TYPES.TRAVEL,
+    (record) => !NON_AUDIT_EVENTUALITY_TYPES.has(record.tipo),
   );
-  const ignoredTravelRecords = eventualities.records.length - auditableExternalRecords.length;
+  const ignoredTravelRecords = eventualities.records.filter(
+    (record) => record.tipo === EVENTUALITY_TYPES.TRAVEL,
+  ).length;
+  const ignoredIrregularPunchRecords = eventualities.records.filter(
+    (record) => record.tipo === EVENTUALITY_TYPES.IRREGULAR_PUNCH,
+  ).length;
   auditableExternalRecords.forEach((record) => {
     const key = eventualityIndexKey(record.codigo, record.fecha);
     if (!key) return;
@@ -553,7 +563,7 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
     const attendance = attendanceByKey.get(key);
     const externalRecords = externalByKey.get(key) ?? [];
     const attendanceTypes = (attendance?.types ?? []).filter(
-      (type) => type !== EVENTUALITY_TYPES.TRAVEL,
+      (type) => !NON_AUDIT_EVENTUALITY_TYPES.has(type),
     );
     const externalTypes = new Set(externalRecords.map((record) => record.tipo).filter(Boolean));
     const hasAnyTypeMatch = attendanceTypes.some((type) => externalTypes.has(type));
@@ -619,17 +629,18 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
       ...buildReconciliationStats(items),
       ignoredExternalRecords,
       ignoredTravelRecords,
+      ignoredIrregularPunchRecords,
     },
   };
 }
 
 export function refreshEventualityReconciliation(reconciliation = {}) {
   const items = (reconciliation.items ?? []).filter((item) => {
-    if (item.tipoExterno === EVENTUALITY_TYPES.TRAVEL) return false;
+    if (NON_AUDIT_EVENTUALITY_TYPES.has(item.tipoExterno)) return false;
     if (isInformationalEventuality(item.tipoExternoLabel)) return false;
     const attendanceTypes = item.tiposAsistencia ?? [];
     return !attendanceTypes.length || attendanceTypes.some(
-      (type) => type !== EVENTUALITY_TYPES.TRAVEL,
+      (type) => !NON_AUDIT_EVENTUALITY_TYPES.has(type),
     );
   });
   const pendingItems = items.filter(needsManualReview);
@@ -641,6 +652,7 @@ export function refreshEventualityReconciliation(reconciliation = {}) {
       ...buildReconciliationStats(items, reconciliation.stats),
       ignoredExternalRecords: reconciliation.stats?.ignoredExternalRecords ?? 0,
       ignoredTravelRecords: reconciliation.stats?.ignoredTravelRecords ?? 0,
+      ignoredIrregularPunchRecords: reconciliation.stats?.ignoredIrregularPunchRecords ?? 0,
     },
   };
 }

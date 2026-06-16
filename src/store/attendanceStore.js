@@ -29,10 +29,13 @@ function removeIgnoredItemsFromStoredAudit(result) {
   const eventuality = result?.audit?.eventuality ?? result?.eventualityAudit;
   if (!eventuality?.enabled) return result;
   const items = (eventuality.items ?? []).filter((item) => {
-    if (item.tipoExterno === 'ver_viatico') return false;
+    if (['ver_viatico', 'ponche_irregular'].includes(item.tipoExterno)) return false;
     if (isIgnoredInformationalEventuality(item.tipoExternoLabel)) return false;
     const attendanceTypes = item.tiposAsistencia ?? [];
-    return !attendanceTypes.length || attendanceTypes.some((type) => type !== 'ver_viatico');
+    return (
+      !attendanceTypes.length ||
+      attendanceTypes.some((type) => !['ver_viatico', 'ponche_irregular'].includes(type))
+    );
   });
   const pendingItems = items.filter((item) => !item.resolved);
   const nextEventuality = {
@@ -108,7 +111,7 @@ export const useAttendanceStore = create(
     }),
     {
       name: 'reas-attendance-config',
-      version: 9,
+      version: 10,
       migrate: (persistedState) => {
         const saveSession = persistedState?.saveSession ?? true;
         const expired = isExpiredSession(persistedState?.lastSession);
