@@ -25,9 +25,31 @@ function isIgnoredInformationalEventuality(value = '') {
   return /\bD.AS?\s+PENDIENTES?\b/.test(normalized) || /\bSALDO\b/.test(normalized);
 }
 
+function removeListToken(value = '', tokenToRemove = '') {
+  return String(value ?? '')
+    .split(';')
+    .map((token) => token.trim())
+    .filter((token) => token && token !== tokenToRemove)
+    .join('; ');
+}
+
 function removeIgnoredItemsFromStoredAudit(result) {
   const eventuality = result?.audit?.eventuality ?? result?.eventualityAudit;
-  if (!eventuality?.enabled) return result;
+  const processedRows = (result?.processedRows ?? []).map((row) => ({
+    ...row,
+    'Tipos de eventualidad detectados': removeListToken(
+      row['Tipos de eventualidad detectados'],
+      'ver_viatico',
+    ),
+    'Tipos de eventualidad en asistencia': removeListToken(
+      row['Tipos de eventualidad en asistencia'],
+      'ver_viatico',
+    ),
+    'Eventualidad externa': removeListToken(row['Eventualidad externa'], 'Ver viatico'),
+  }));
+  if (!eventuality?.enabled) {
+    return result ? { ...result, processedRows } : result;
+  }
   const nonAuditTypes = ['vacacion', 'ver_viatico', 'feriado', 'ponche_irregular'];
   const items = (eventuality.items ?? []).filter((item) => {
     if (nonAuditTypes.includes(item.tipoExterno)) return false;
@@ -56,6 +78,7 @@ function removeIgnoredItemsFromStoredAudit(result) {
   );
   return {
     ...result,
+    processedRows,
     eventualityAudit: nextEventuality,
     audit: {
       ...result.audit,
@@ -112,7 +135,7 @@ export const useAttendanceStore = create(
     }),
     {
       name: 'reas-attendance-config',
-      version: 12,
+      version: 13,
       migrate: (persistedState) => {
         const saveSession = persistedState?.saveSession ?? true;
         const expired = isExpiredSession(persistedState?.lastSession);

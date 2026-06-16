@@ -24,6 +24,10 @@ import {
   getMaxConsecutiveWorkdayAbsences,
 } from './disciplinaryRules.js';
 
+const NON_EVENTUALITY_TYPES = new Set([
+  EVENTUALITY_TYPES.TRAVEL,
+]);
+
 export const CANONICAL_FIELDS = {
   nombre: 'NOMBRE',
   ubicacion: 'UBICACION',
@@ -585,7 +589,10 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
     metrics.verViatico ? EVENTUALITY_TYPES.TRAVEL : '',
     isHoliday ? EVENTUALITY_TYPES.HOLIDAY : '',
   ].filter(Boolean);
-  const externalLabels = externalEventualities.map((event) => event.tipoLabel || event.tipoOriginal);
+  const displayExternalEventualities = externalEventualities.filter(
+    (event) => !NON_EVENTUALITY_TYPES.has(event.tipo),
+  );
+  const externalLabels = displayExternalEventualities.map((event) => event.tipoLabel || event.tipoOriginal);
   const displayRow = {
     codigo: clean(asValue(rawRow, mapping, 'codigo')),
     nombre: clean(asValue(rawRow, mapping, 'nombre')),
@@ -606,10 +613,12 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
       .filter(Boolean)
       .join('; '),
     estadoFinal: states.join('; ') || (isWorkday ? 'Sin eventualidad' : 'Dia no laborable'),
-    eventualidadJustificada: hasObservation,
-    detectedEventTypes,
-    attendanceSourceTypes: Array.from(attendanceSourceTypes),
-    externalEventualities,
+    eventualidadJustificada: metrics.eventualidadesJustificadas > 0,
+    detectedEventTypes: detectedEventTypes.filter((type) => !NON_EVENTUALITY_TYPES.has(type)),
+    attendanceSourceTypes: Array.from(attendanceSourceTypes).filter(
+      (type) => !NON_EVENTUALITY_TYPES.has(type),
+    ),
+    externalEventualities: displayExternalEventualities,
     metricFlags: metrics,
   };
 
