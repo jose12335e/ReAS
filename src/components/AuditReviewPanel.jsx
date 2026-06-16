@@ -91,7 +91,8 @@ function EventualityReconciliation({ reconciliation, disabled, onDecision }) {
   const [manualTimes, setManualTimes] = useState({});
   if (!reconciliation?.enabled) return null;
 
-  const items = reconciliation.items ?? [];
+  const items = reconciliation.pendingItems ?? [];
+  const totalItems = reconciliation.items?.length ?? items.length;
   const orderedItems = [...items].sort(
     (a, b) => Number(a.resolved) - Number(b.resolved) || a.priority - b.priority,
   );
@@ -135,14 +136,19 @@ function EventualityReconciliation({ reconciliation, disabled, onDecision }) {
           <div className="mt-4 flex items-start gap-2 rounded-lg border border-violet-200 bg-white p-3 text-sm text-violet-950">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" />
             <span>
-              Los estados claros se clasifican automáticamente. Los registros con -1, estado pendiente, datos
-              incompletos o diferencias permanecen para revisión manual.
+              Esta bandeja solo muestra lo que necesita decision humana: -1, estados pendientes, tipos diferentes, datos incompletos o diferencias. Lo claro y automatico no se muestra aqui.
             </span>
           </div>
           {reconciliation.stats?.automaticProcessed ? (
             <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">
               {reconciliation.stats.automaticProcessed} eventualidad(es) fueron procesadas automáticamente. Ningún
               registro con -1 fue clasificado de forma automática.
+            </div>
+          ) : null}
+          {reconciliation.stats?.automaticClear ? (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-sm font-medium text-slate-700">
+              {reconciliation.stats.automaticClear} eventualidad(es) clara(s) quedaron fuera de auditoria porque el
+              sistema ya pudo clasificarlas sin intervencion.
             </div>
           ) : null}
           <div className="mt-3 grid gap-3">
@@ -210,7 +216,7 @@ function EventualityReconciliation({ reconciliation, disabled, onDecision }) {
                       </label>
                       {item.pendingTime ? (
                         <p className="text-xs font-semibold text-orange-700">
-                          Este registro contiene -1. Revisa el tiempo y elige una clasificaciÃ³n manual; no puede
+                          Este registro contiene -1. Revisa el tiempo y elige una clasificación manual; no puede
                           confirmarse sin cambios.
                         </p>
                       ) : null}
@@ -262,13 +268,16 @@ function EventualityReconciliation({ reconciliation, disabled, onDecision }) {
               type="button"
               onClick={() => setShowAll((current) => !current)}
             >
-              {showAll ? 'Mostrar menos' : `Mostrar las ${items.length} eventualidades`}
+              {showAll ? 'Mostrar menos' : `Mostrar las ${items.length} eventualidades pendientes`}
             </button>
           ) : null}
         </>
       ) : (
         <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-900">
-          El archivo no contiene eventualidades procesables para el mes seleccionado.
+          No hay eventualidades pendientes de revision.{' '}
+          {totalItems
+            ? `${totalItems} registro(s) quedaron clasificados o ignorados por regla automatica.`
+            : 'El archivo no contiene eventualidades procesables para el mes seleccionado.'}
         </div>
       )}
     </div>

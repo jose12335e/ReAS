@@ -427,6 +427,46 @@ function buildReconciliationItem({
   };
 }
 
+function isPendingExternalStatus(item = {}) {
+  return ['pendiente', 'otro', 'sin_estado'].includes(item.estadoEventualidad);
+}
+
+function isClearAutomaticUnjustified(item = {}) {
+  return (
+    item.status === 'solo_asistencia' &&
+    item.clasificacionActual === 'unjustified' &&
+    Number(item.tiempoClasificadoActualMin || item.tiempoSugeridoMin || 0) > 0 &&
+    !item.tipoExterno
+  );
+}
+
+function needsManualReview(item = {}) {
+  if (item.resolved) return false;
+  if (item.pendingTime || item.status === 'requiere_confirmacion') return true;
+  if (['tipo_no_reconocido', 'tipo_diferente'].includes(item.status)) return true;
+  if (isClearAutomaticUnjustified(item)) return false;
+  if (item.status === 'solo_eventualidades') return true;
+  if (item.status === 'solo_asistencia') return item.clasificacionActual !== 'unjustified';
+  if (item.status === 'confirmado') return isPendingExternalStatus(item);
+  return false;
+}
+
+function buildReconciliationStats(items = [], previousStats = {}) {
+  const pendingItems = items.filter(needsManualReview);
+  return {
+    ...(previousStats ?? {}),
+    total: items.length,
+    confirmed: items.filter((item) => item.status === 'confirmado' || item.resolved).length,
+    sourceMatches: items.filter((item) => item.sourceMatch).length,
+    pending: pendingItems.length,
+    onlyEventualities: pendingItems.filter((item) => item.status === 'solo_eventualidades').length,
+    onlyAttendance: pendingItems.filter((item) => item.status === 'solo_asistencia').length,
+    differentType: pendingItems.filter((item) => item.status === 'tipo_diferente').length,
+    pendingTime: pendingItems.filter((item) => item.pendingTime).length,
+    automaticClear: items.filter((item) => !needsManualReview(item) && !item.resolved).length,
+  };
+}
+
 export function buildEventualityReconciliation(eventualities, processedRows = []) {
   if (!eventualities?.enabled) {
     return {
@@ -569,21 +609,14 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
       String(a.nombre).localeCompare(String(b.nombre), 'es') ||
       String(a.fecha).localeCompare(String(b.fecha)),
   );
-  const pendingItems = items.filter((item) => !item.resolved);
+  const pendingItems = items.filter(needsManualReview);
 
   return {
     enabled: true,
     items,
     pendingItems,
     stats: {
-      total: items.length,
-      confirmed: items.filter((item) => item.status === 'confirmado').length,
-      sourceMatches: items.filter((item) => item.sourceMatch).length,
-      pending: pendingItems.length,
-      onlyEventualities: items.filter((item) => item.status === 'solo_eventualidades').length,
-      onlyAttendance: items.filter((item) => item.status === 'solo_asistencia').length,
-      differentType: items.filter((item) => item.status === 'tipo_diferente').length,
-      pendingTime: items.filter((item) => item.status === 'requiere_confirmacion').length,
+      ...buildReconciliationStats(items),
       ignoredExternalRecords,
       ignoredTravelRecords,
     },
@@ -599,21 +632,13 @@ export function refreshEventualityReconciliation(reconciliation = {}) {
       (type) => type !== EVENTUALITY_TYPES.TRAVEL,
     );
   });
-  const pendingItems = items.filter((item) => !item.resolved);
+  const pendingItems = items.filter(needsManualReview);
   return {
     ...reconciliation,
     items,
     pendingItems,
     stats: {
-      ...(reconciliation.stats ?? {}),
-      total: items.length,
-      confirmed: items.filter((item) => item.status === 'confirmado' || item.resolved).length,
-      sourceMatches: items.filter((item) => item.sourceMatch).length,
-      pending: pendingItems.length,
-      onlyEventualities: pendingItems.filter((item) => item.status === 'solo_eventualidades').length,
-      onlyAttendance: pendingItems.filter((item) => item.status === 'solo_asistencia').length,
-      differentType: pendingItems.filter((item) => item.status === 'tipo_diferente').length,
-      pendingTime: pendingItems.filter((item) => item.status === 'requiere_confirmacion').length,
+      ...buildReconciliationStats(items, reconciliation.stats),
       ignoredExternalRecords: reconciliation.stats?.ignoredExternalRecords ?? 0,
       ignoredTravelRecords: reconciliation.stats?.ignoredTravelRecords ?? 0,
     },
