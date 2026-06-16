@@ -47,6 +47,7 @@ const TYPE_LABELS = {
 };
 
 const NON_AUDIT_EVENTUALITY_TYPES = new Set([
+  EVENTUALITY_TYPES.VACATION,
   EVENTUALITY_TYPES.TRAVEL,
   EVENTUALITY_TYPES.HOLIDAY,
   EVENTUALITY_TYPES.IRREGULAR_PUNCH,
@@ -437,10 +438,10 @@ function isPendingExternalStatus(item = {}) {
   return ['pendiente', 'otro', 'sin_estado'].includes(item.estadoEventualidad);
 }
 
-function isClearAutomaticUnjustified(item = {}) {
+function isClearAutomaticClassification(item = {}) {
   return (
     item.status === 'solo_asistencia' &&
-    item.clasificacionActual === 'unjustified' &&
+    ['justified', 'unjustified'].includes(item.clasificacionActual) &&
     Number(item.tiempoClasificadoActualMin || item.tiempoSugeridoMin || 0) > 0 &&
     !item.tipoExterno
   );
@@ -450,9 +451,9 @@ function needsManualReview(item = {}) {
   if (item.resolved) return false;
   if (item.pendingTime || item.status === 'requiere_confirmacion') return true;
   if (['tipo_no_reconocido', 'tipo_diferente'].includes(item.status)) return true;
-  if (isClearAutomaticUnjustified(item)) return false;
+  if (isClearAutomaticClassification(item)) return false;
   if (item.status === 'solo_eventualidades') return true;
-  if (item.status === 'solo_asistencia') return item.clasificacionActual !== 'unjustified';
+  if (item.status === 'solo_asistencia') return true;
   if (item.status === 'confirmado') return isPendingExternalStatus(item);
   return false;
 }
@@ -542,6 +543,9 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
   );
   const ignoredTravelRecords = eventualities.records.filter(
     (record) => record.tipo === EVENTUALITY_TYPES.TRAVEL,
+  ).length;
+  const ignoredVacationRecords = eventualities.records.filter(
+    (record) => record.tipo === EVENTUALITY_TYPES.VACATION,
   ).length;
   const ignoredIrregularPunchRecords = eventualities.records.filter(
     (record) => record.tipo === EVENTUALITY_TYPES.IRREGULAR_PUNCH,
@@ -633,6 +637,7 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
       ...buildReconciliationStats(items),
       ignoredExternalRecords,
       ignoredTravelRecords,
+      ignoredVacationRecords,
       ignoredIrregularPunchRecords,
       ignoredHolidayRecords,
     },
@@ -657,6 +662,7 @@ export function refreshEventualityReconciliation(reconciliation = {}) {
       ...buildReconciliationStats(items, reconciliation.stats),
       ignoredExternalRecords: reconciliation.stats?.ignoredExternalRecords ?? 0,
       ignoredTravelRecords: reconciliation.stats?.ignoredTravelRecords ?? 0,
+      ignoredVacationRecords: reconciliation.stats?.ignoredVacationRecords ?? 0,
       ignoredIrregularPunchRecords: reconciliation.stats?.ignoredIrregularPunchRecords ?? 0,
       ignoredHolidayRecords: reconciliation.stats?.ignoredHolidayRecords ?? 0,
     },
