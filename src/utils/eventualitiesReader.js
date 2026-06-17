@@ -66,6 +66,11 @@ const NON_AUDIT_EVENTUALITY_TYPES = new Set([
   EVENTUALITY_TYPES.IRREGULAR_PUNCH,
 ]);
 
+const ATTENDANCE_ONLY_AUTOMATIC_TYPES = new Set([
+  EVENTUALITY_TYPES.LICENSE,
+  EVENTUALITY_TYPES.PERMIT,
+]);
+
 function normalizeText(value = '') {
   return String(value ?? '')
     .normalize('NFD')
@@ -497,10 +502,21 @@ function isClearAutomaticClassification(item = {}) {
   );
 }
 
+function isAttendanceOnlyAutomaticEventuality(item = {}) {
+  const attendanceTypes = item.tiposAsistencia ?? [];
+  return (
+    item.status === 'solo_asistencia' &&
+    !item.tipoExterno &&
+    attendanceTypes.length > 0 &&
+    attendanceTypes.every((type) => ATTENDANCE_ONLY_AUTOMATIC_TYPES.has(type))
+  );
+}
+
 function needsManualReview(item = {}) {
   if (item.resolved) return false;
   if (item.pendingTime || item.status === 'requiere_confirmacion') return true;
   if (['tipo_no_reconocido', 'tipo_diferente'].includes(item.status)) return true;
+  if (isAttendanceOnlyAutomaticEventuality(item)) return false;
   if (isClearAutomaticClassification(item)) return false;
   if (item.status === 'solo_eventualidades') return true;
   if (item.status === 'solo_asistencia') return true;
@@ -652,6 +668,7 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
 
     attendanceTypes.forEach((type) => {
       if (externalTypes.has(type)) return;
+      if (!externalRecords.length && ATTENDANCE_ONLY_AUTOMATIC_TYPES.has(type)) return;
       if (externalRecords.length && !hasAnyTypeMatch) return;
       items.push(
         buildReconciliationItem({
@@ -698,6 +715,7 @@ export function refreshEventualityReconciliation(reconciliation = {}) {
   const items = (reconciliation.items ?? []).filter((item) => {
     if (NON_AUDIT_EVENTUALITY_TYPES.has(item.tipoExterno)) return false;
     if (isInformationalEventuality(item.tipoExternoLabel)) return false;
+    if (isAttendanceOnlyAutomaticEventuality(item)) return false;
     const attendanceTypes = item.tiposAsistencia ?? [];
     return !attendanceTypes.length || attendanceTypes.some(
       (type) => !NON_AUDIT_EVENTUALITY_TYPES.has(type),

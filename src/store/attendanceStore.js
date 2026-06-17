@@ -51,10 +51,19 @@ function removeIgnoredItemsFromStoredAudit(result) {
     return result ? { ...result, processedRows } : result;
   }
   const nonAuditTypes = ['vacacion', 'ver_viatico', 'feriado', 'ponche_irregular'];
+  const attendanceOnlyAutomaticTypes = ['licencia', 'permiso'];
   const items = (eventuality.items ?? []).filter((item) => {
     if (nonAuditTypes.includes(item.tipoExterno)) return false;
     if (isIgnoredInformationalEventuality(item.tipoExternoLabel)) return false;
     const attendanceTypes = item.tiposAsistencia ?? [];
+    if (
+      item.status === 'solo_asistencia' &&
+      !item.tipoExterno &&
+      attendanceTypes.length &&
+      attendanceTypes.every((type) => attendanceOnlyAutomaticTypes.includes(type))
+    ) {
+      return false;
+    }
     return (
       !attendanceTypes.length ||
       attendanceTypes.some((type) => !nonAuditTypes.includes(type))
