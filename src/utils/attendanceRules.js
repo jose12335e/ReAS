@@ -94,6 +94,19 @@ function findPayrollRecord(payrollEmployeesByCode, code) {
   return codeKeys.map((key) => payrollEmployeesByCode[key]).find(Boolean) ?? null;
 }
 
+function dateOnlyTimestamp(value) {
+  const parsed = parseDateValue(value);
+  if (!parsed) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()).getTime();
+}
+
+function isBeforeHireDate(rawRow, mapping, payrollRecord) {
+  if (!payrollRecord?.fechaIngreso) return false;
+  const rowDate = dateOnlyTimestamp(asValue(rawRow, mapping, 'fecha'));
+  const hireDate = dateOnlyTimestamp(payrollRecord.fechaIngreso);
+  return rowDate !== null && hireDate !== null && rowDate < hireDate;
+}
+
 function detectScheduleType(row, mapping, defaultScheduleType, extendedEmployeeCodes) {
   const codeKeys = getEmployeeCodeKeys(asValue(row, mapping, 'codigo'));
   const raw = clean(asValue(row, mapping, 'tipoHorario')).toLowerCase();
@@ -144,6 +157,38 @@ function addMetrics(target, source) {
 
 function addEvent(events, type, row) {
   events[type].push(row);
+}
+
+function buildExcludedPayrollProcessedRow({ rawRow, mapping, index, rawCode, payrollRecord, reason }) {
+  return {
+    '#': index + 1,
+    NOMBRE: payrollRecord.nombre || clean(asValue(rawRow, mapping, 'nombre')),
+    CODIGO: rawCode,
+    UBICACION: payrollRecord.ubicacion || clean(asValue(rawRow, mapping, 'ubicacion')) || 'Sin ubicacion',
+    DEPARTAMENTO: payrollRecord.ubicacion || '',
+    CARGO: payrollRecord.cargo || '',
+    POSICION: payrollRecord.posicion || '',
+    CEDULA: payrollRecord.cedula || '',
+    'Fecha ingreso': payrollRecord.fechaIngreso || '',
+    FECHA: clean(asValue(rawRow, mapping, 'fecha')),
+    DIA: clean(asValue(rawRow, mapping, 'dia')),
+    'Tipo horario': '',
+    'Hora entrada': clean(asValue(rawRow, mapping, 'entrada')),
+    'Hora salida': clean(asValue(rawRow, mapping, 'salida')),
+    'Tiempo observaciones': clean(asValue(rawRow, mapping, 'tiempoObservaciones')),
+    'Horas esperadas': 0,
+    'Horas trabajadas reales': 0,
+    'Horas trabajadas reconocidas': 0,
+    'Tiempo tardanza': '00:00',
+    'Tiempo salida temprana': '00:00',
+    'Tiempo no trabajado justificado': '00:00',
+    'Tiempo no trabajado no justificado': '00:00',
+    'Tasa ausentismo': 0,
+    'Ver viatico': 0,
+    'ObservaciÃ³n original': clean(asValue(rawRow, mapping, 'observaciones')),
+    'ObservaciÃ³n procesada': reason,
+    'Estado final': `Excluido de cÃ¡lculos - ${reason}`,
+  };
 }
 
 function getAbsenceEquivalentMinutes(scheduleType, expectedMinutes) {
@@ -652,6 +697,7 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
     byPositionRows: 0,
     byHierarchyPositionRows: 0,
     byHireDateRows: 0,
+    beforeHireDateRows: 0,
   };
   const events = {
     tardanzas: [],
@@ -665,6 +711,7 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
   rows.forEach((rawRow, index) => {
     const rawCode = clean(asValue(rawRow, mapping, 'codigo'));
     const payrollRecord = findPayrollRecord(payrollEmployeesByCode, rawCode);
+    const isBeforePayrollHireDate = isBeforeHireDate(rawRow, mapping, payrollRecord);
     if (payrollRecord?.excluded) {
       excludedRowsByPayroll += 1;
       payrollExclusionSummary.totalRows += 1;
@@ -700,6 +747,21 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
         'Observación procesada': payrollRecord.exclusionReason,
         'Estado final': `Excluido de cálculos - ${payrollRecord.exclusionReason}`,
       });
+      return;
+    }
+    if (isBeforePayrollHireDate) {
+      const reason = 'Marca anterior a la fecha de ingreso';
+      excludedRowsByPayroll += 1;
+      payrollExclusionSummary.totalRows += 1;
+      payrollExclusionSummary.beforeHireDateRows += 1;
+      processedRows.push(buildExcludedPayrollProcessedRow({
+        rawRow,
+        mapping,
+        index,
+        rawCode,
+        payrollRecord,
+        reason,
+      }));
       return;
     }
 

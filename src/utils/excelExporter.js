@@ -1648,35 +1648,41 @@ async function addControlReportSheet(workbook, result, reportOptions = {}) {
   addControlKeyValue(
     worksheet,
     37,
+    'Marcas antes de fecha de ingreso',
+    formatCount(payrollSummary.beforeHireDateRows, ' fila(s)'),
+  );
+  addControlKeyValue(
+    worksheet,
+    38,
     'Excel de eventualidades',
     eventualities.fileName ? `Sí - ${eventualities.fileName}` : 'No',
   );
   addControlKeyValue(
     worksheet,
-    38,
+    39,
     'Hojas de eventualidades usadas',
     (eventualities.sheets ?? []).map((sheet) => sheet.sheetName).join(', '),
   );
   addControlKeyValue(
     worksheet,
-    39,
+    40,
     'Registros diarios de eventualidades',
     formatCount(eventualities.stats?.dailyRecords),
   );
   addControlKeyValue(
     worksheet,
-    40,
+    41,
     'Diferencias de eventualidades',
     formatCount(eventualityAudit.stats?.pending),
   );
   addControlKeyValue(
     worksheet,
-    41,
+    42,
     'Eventualidades con -1',
     formatCount(eventualityAudit.stats?.pendingTime),
   );
 
-  const warningTitleRow = 43;
+  const warningTitleRow = 44;
   const warningStartRow = warningTitleRow + 1;
   addControlSectionTitle(worksheet, warningTitleRow, 'Advertencias del procesamiento');
   if (warnings.length) {

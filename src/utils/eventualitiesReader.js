@@ -546,6 +546,7 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
 
   const attendanceByKey = new Map();
   processedRows.forEach((row) => {
+    if (/^excluido de c/i.test(clean(row['Estado final']))) return;
     const date = formatDateKey(row.FECHA);
     const code = clean(row.CODIGO);
     const key = eventualityIndexKey(code, date);
