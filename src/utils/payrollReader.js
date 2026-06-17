@@ -79,8 +79,58 @@ export function inferPayrollMapping(rows = []) {
   );
 }
 
+function inferPayrollMappingFromHeaders(headers = []) {
+  if (!headers.length) return inferPayrollMapping([]);
+  const headerRow = Object.fromEntries(headers.map((header) => [header, '']));
+  return inferPayrollMapping([headerRow]);
+}
+
 function scorePayrollSheet(rows = []) {
   const mapping = inferPayrollMapping(rows);
+  return ['code', 'position', 'location', 'hireDate', 'name'].reduce(
+    (score, field) => score + (mapping[field] ? 1 : 0),
+    0,
+  );
+}
+
+function worksheetRange(worksheet) {
+  if (!worksheet?.['!ref']) return null;
+  return XLSX.utils.decode_range(worksheet['!ref']);
+}
+
+function rowsFromSheetPreview(worksheet, previewLimit = 5) {
+  const range = worksheetRange(worksheet);
+  if (!range) {
+    return { headers: [], previewRows: [], rowCount: 0 };
+  }
+
+  const previewRange = {
+    s: range.s,
+    e: {
+      r: Math.min(range.e.r, range.s.r + previewLimit),
+      c: range.e.c,
+    },
+  };
+  const matrix = XLSX.utils.sheet_to_json(worksheet, {
+    header: 1,
+    defval: '',
+    raw: false,
+    blankrows: false,
+    range: previewRange,
+  });
+  const headers = (matrix[0] ?? []).map((header, index) => clean(header) || `Columna ${index + 1}`);
+  const previewRows = matrix.slice(1).map((values) =>
+    Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ''])),
+  );
+
+  return {
+    headers,
+    previewRows,
+    rowCount: Math.max(0, range.e.r - range.s.r),
+  };
+}
+
+function scorePayrollMapping(mapping = {}) {
   return ['code', 'position', 'location', 'hireDate', 'name'].reduce(
     (score, field) => score + (mapping[field] ? 1 : 0),
     0,
@@ -96,11 +146,19 @@ function readWorkbookRows(arrayBuffer) {
 
   const sheets = workbook.SheetNames.map((sheetName) => {
     const worksheet = workbook.Sheets[sheetName];
-    const rows = worksheet ? XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: false }) : [];
-    return { sheetName, rows, score: scorePayrollSheet(rows) };
-  }).sort((a, b) => b.score - a.score || b.rows.length - a.rows.length);
+    const preview = rowsFromSheetPreview(worksheet);
+    const mapping = inferPayrollMappingFromHeaders(preview.headers);
+    return {
+      sheetName,
+      score: scorePayrollMapping(mapping),
+      rowCount: preview.rowCount,
+    };
+  }).sort((a, b) => b.score - a.score || b.rowCount - a.rowCount);
 
-  return sheets[0] ?? { sheetName: '', rows: [], score: 0 };
+  const selectedSheet = sheets[0] ?? { sheetName: '', score: 0 };
+  const worksheet = workbook.Sheets[selectedSheet.sheetName];
+  const rows = worksheet ? XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: false }) : [];
+  return { ...selectedSheet, rows };
 }
 
 export function previewPayrollWorkbook(arrayBuffer, fileName) {
@@ -112,14 +170,15 @@ export function previewPayrollWorkbook(arrayBuffer, fileName) {
   });
   const sheets = workbook.SheetNames.map((sheetName) => {
     const worksheet = workbook.Sheets[sheetName];
-    const rows = worksheet ? XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: false }) : [];
+    const preview = rowsFromSheetPreview(worksheet);
+    const mapping = inferPayrollMappingFromHeaders(preview.headers);
     return {
       sheetName,
-      headers: rows.length ? Object.keys(rows[0]) : [],
-      previewRows: rows.slice(0, 5),
-      rowCount: rows.length,
-      mapping: inferPayrollMapping(rows),
-      score: scorePayrollSheet(rows),
+      headers: preview.headers,
+      previewRows: preview.previewRows,
+      rowCount: preview.rowCount,
+      mapping,
+      score: scorePayrollMapping(mapping),
     };
   }).sort((a, b) => b.score - a.score || b.rowCount - a.rowCount);
   const selectedSheet = sheets[0] ?? {

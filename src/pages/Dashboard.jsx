@@ -40,8 +40,9 @@ import {
   validateColumnMapping,
   validateFileForUpload,
   validateFilesForUpload,
-  validateWorkbookDataForMonth,
 } from '../utils/validationRules.js';
+
+const MAX_LOCAL_STORAGE_RESULT_ROWS = 15000;
 
 function ProgressBar({ progress, status }) {
   if (!status) return null;
@@ -217,8 +218,12 @@ export default function Dashboard({ activeUser, onLogout }) {
   const mappingValidation = useMemo(() => validateColumnMapping(mapping), [mapping]);
   const workbookValidation = useMemo(() => {
     if (!preview.headers.length) return null;
-    return validateWorkbookDataForMonth(preview.rows, mapping, selectedMonth);
-  }, [mapping, preview.headers.length, preview.rows, selectedMonth]);
+    return preview.validation ?? null;
+  }, [preview.headers.length, preview.validation]);
+
+  function canPersistFullResult(nextResult) {
+    return Number(nextResult?.metadata?.processedRows ?? nextResult?.processedRows?.length ?? 0) <= MAX_LOCAL_STORAGE_RESULT_ROWS;
+  }
 
   useEffect(() => {
     const worker = new Worker(new URL('../workers/attendanceWorker.js', import.meta.url), {
@@ -282,6 +287,10 @@ export default function Dashboard({ activeUser, onLogout }) {
         setFileWarnings([]);
         setIsBusy(false);
         setStatus('');
+        if (!canPersistFullResult(payload)) {
+          setLastResult(null);
+          return;
+        }
         try {
           setLastResult(payload);
         } catch (storageError) {
@@ -583,6 +592,10 @@ export default function Dashboard({ activeUser, onLogout }) {
 
   function scheduleResultPersistence(nextResult) {
     if (!saveSession) return;
+    if (!canPersistFullResult(nextResult)) {
+      setLastResult(null);
+      return;
+    }
     const persistenceVersion = ++persistenceVersionRef.current;
     if (persistenceTimerRef.current) window.clearTimeout(persistenceTimerRef.current);
     persistenceTimerRef.current = window.setTimeout(() => {

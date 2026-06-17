@@ -45,7 +45,12 @@ self.onmessage = async (event) => {
       const availableMonths = detectAvailableMonths(parsed.rows, parsed.mapping);
       post('progress', { value: 100, label: 'Vista previa lista' });
       post('preview:success', {
-        ...parsed,
+        headers: parsed.headers,
+        previewRows: parsed.previewRows,
+        sheetName: parsed.sheetName,
+        mapping: parsed.mapping,
+        validation: parsed.validation,
+        rowCount: parsed.rows.length,
         availableMonths,
         selectedMonth: availableMonths[0] ?? null,
       });
