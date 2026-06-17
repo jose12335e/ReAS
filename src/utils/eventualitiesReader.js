@@ -66,11 +66,6 @@ const NON_AUDIT_EVENTUALITY_TYPES = new Set([
   EVENTUALITY_TYPES.IRREGULAR_PUNCH,
 ]);
 
-const ATTENDANCE_ONLY_AUTOMATIC_TYPES = new Set([
-  EVENTUALITY_TYPES.LICENSE,
-  EVENTUALITY_TYPES.PERMIT,
-]);
-
 function normalizeText(value = '') {
   return String(value ?? '')
     .normalize('NFD')
@@ -507,8 +502,7 @@ function isAttendanceOnlyAutomaticEventuality(item = {}) {
   return (
     item.status === 'solo_asistencia' &&
     !item.tipoExterno &&
-    attendanceTypes.length > 0 &&
-    attendanceTypes.every((type) => ATTENDANCE_ONLY_AUTOMATIC_TYPES.has(type))
+    attendanceTypes.length > 0
   );
 }
 
@@ -668,7 +662,7 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
 
     attendanceTypes.forEach((type) => {
       if (externalTypes.has(type)) return;
-      if (!externalRecords.length && ATTENDANCE_ONLY_AUTOMATIC_TYPES.has(type)) return;
+      if (!externalRecords.length) return;
       if (externalRecords.length && !hasAnyTypeMatch) return;
       items.push(
         buildReconciliationItem({
