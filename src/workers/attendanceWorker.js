@@ -4,8 +4,9 @@ import {
   detectAvailableMonths,
   filterRowsByEvaluationMonth,
   parseExtendedScheduleFiles,
+  previewExtendedScheduleWorkbook,
 } from '../utils/extendedScheduleReader.js';
-import { parsePayrollWorkbook } from '../utils/payrollReader.js';
+import { parsePayrollWorkbook, previewPayrollWorkbook } from '../utils/payrollReader.js';
 import { validateColumnMapping, validateWorkbookData } from '../utils/validationRules.js';
 import {
   applyAutomaticEventualityDecisions,
@@ -13,6 +14,7 @@ import {
 import {
   buildEventualityReconciliation,
   parseEventualitiesWorkbook,
+  previewEventualitiesWorkbook,
 } from '../utils/eventualitiesReader.js';
 
 let cachedRows = [];
@@ -59,6 +61,38 @@ self.onmessage = async (event) => {
       return;
     }
 
+    if (type === 'aux-preview') {
+      const { kind, files = [], file = null, evaluationMonth = null } = payload;
+      if (kind === 'extended') {
+        post('aux-preview:success', {
+          kind,
+          files: files.map((currentFile, index) => ({
+            id: currentFile.id ?? `${currentFile.name}-${index}`,
+            ...previewExtendedScheduleWorkbook(
+              currentFile.arrayBuffer,
+              currentFile.name,
+              evaluationMonth,
+            ),
+          })),
+        });
+        return;
+      }
+      if (kind === 'payroll') {
+        post('aux-preview:success', {
+          kind,
+          file: previewPayrollWorkbook(file?.arrayBuffer, file?.name),
+        });
+        return;
+      }
+      if (kind === 'eventualities') {
+        post('aux-preview:success', {
+          kind,
+          file: previewEventualitiesWorkbook(file?.arrayBuffer, file?.name),
+        });
+        return;
+      }
+    }
+
     if (type === 'process') {
       const mappingValidation = validateColumnMapping(payload.mapping);
       if (!mappingValidation.isValid) {
@@ -86,12 +120,14 @@ self.onmessage = async (event) => {
         payload.payrollFile?.arrayBuffer,
         payload.payrollFile?.name,
         extendedSchedule.evaluationMonth,
+        payload.payrollFile?.options,
       );
       post('progress', { value: 39, label: 'Cruzando Excel de eventualidades' });
       const eventualities = parseEventualitiesWorkbook(
         payload.eventualitiesFile?.arrayBuffer,
         payload.eventualitiesFile?.name,
         selectedMonth ?? extendedSchedule.evaluationMonth,
+        payload.eventualitiesFile?.options,
       );
       post('progress', { value: 46, label: 'Aplicando reglas de asistencia' });
       const processedResult = processAttendanceRows(rows, payload.mapping, {

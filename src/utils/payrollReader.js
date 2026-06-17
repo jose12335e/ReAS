@@ -12,6 +12,16 @@ const HEADER_ALIASES = {
   hireDate: ['FECHA DE INGRESO', 'FECHA INGRESO', 'INGRESO', 'FECHA INICIO', 'FECHA DE ENTRADA'],
 };
 
+export const PAYROLL_FIELD_DEFINITIONS = [
+  { key: 'code', label: 'Codigo empleado', required: true },
+  { key: 'name', label: 'Nombre completo', required: false },
+  { key: 'documentId', label: 'Cedula', required: false },
+  { key: 'position', label: 'Cargo', required: true },
+  { key: 'hierarchyPosition', label: 'Posicion', required: false },
+  { key: 'location', label: 'Ubicacion', required: false },
+  { key: 'hireDate', label: 'Fecha de ingreso', required: true },
+];
+
 function normalizeHeader(value = '') {
   return String(value)
     .normalize('NFD')
@@ -58,7 +68,7 @@ function findHeader(headers, aliases, field) {
   );
 }
 
-function inferPayrollMapping(rows = []) {
+export function inferPayrollMapping(rows = []) {
   const headers = rows.length ? Object.keys(rows[0]) : [];
 
   return Object.fromEntries(
@@ -93,6 +103,43 @@ function readWorkbookRows(arrayBuffer) {
   return sheets[0] ?? { sheetName: '', rows: [], score: 0 };
 }
 
+export function previewPayrollWorkbook(arrayBuffer, fileName) {
+  if (!arrayBuffer) return null;
+  const workbook = XLSX.read(arrayBuffer, {
+    type: 'array',
+    cellDates: true,
+    raw: false,
+  });
+  const sheets = workbook.SheetNames.map((sheetName) => {
+    const worksheet = workbook.Sheets[sheetName];
+    const rows = worksheet ? XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: false }) : [];
+    return {
+      sheetName,
+      headers: rows.length ? Object.keys(rows[0]) : [],
+      previewRows: rows.slice(0, 5),
+      rowCount: rows.length,
+      mapping: inferPayrollMapping(rows),
+      score: scorePayrollSheet(rows),
+    };
+  }).sort((a, b) => b.score - a.score || b.rowCount - a.rowCount);
+  const selectedSheet = sheets[0] ?? {
+    sheetName: '',
+    headers: [],
+    previewRows: [],
+    rowCount: 0,
+    mapping: {},
+  };
+
+  return {
+    fileName,
+    selectedSheetName: selectedSheet.sheetName,
+    sheets,
+    headers: selectedSheet.headers,
+    previewRows: selectedSheet.previewRows,
+    mapping: selectedSheet.mapping,
+  };
+}
+
 function clean(value) {
   return String(value ?? '').trim();
 }
@@ -120,7 +167,7 @@ function isAfterEvaluationPeriod(hireDate, evaluationMonth) {
   return hireDate.getTime() > periodEnd.getTime();
 }
 
-export function parsePayrollWorkbook(arrayBuffer, fileName, evaluationMonth) {
+export function parsePayrollWorkbook(arrayBuffer, fileName, evaluationMonth, options = {}) {
   if (!arrayBuffer) {
     return {
       fileName: '',
@@ -132,8 +179,15 @@ export function parsePayrollWorkbook(arrayBuffer, fileName, evaluationMonth) {
     };
   }
 
-  const selectedSheet = readWorkbookRows(arrayBuffer);
-  const mapping = inferPayrollMapping(selectedSheet.rows);
+  const selectedSheet = options.sheetName
+    ? (() => {
+        const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true, raw: false });
+        const worksheet = workbook.Sheets[options.sheetName];
+        const rows = worksheet ? XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: false }) : [];
+        return { sheetName: options.sheetName, rows, score: scorePayrollSheet(rows) };
+      })()
+    : readWorkbookRows(arrayBuffer);
+  const mapping = { ...inferPayrollMapping(selectedSheet.rows), ...(options.mapping ?? {}) };
   const employeesByCode = {};
   const warnings = [];
 

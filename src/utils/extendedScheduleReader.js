@@ -27,6 +27,10 @@ const CODE_HEADERS = [
   'EMPLEADO',
 ];
 
+export const EXTENDED_SCHEDULE_FIELD_DEFINITIONS = [
+  { key: 'code', label: 'Codigo empleado', required: true },
+];
+
 function normalizeText(value = '') {
   return String(value)
     .normalize('NFD')
@@ -166,18 +170,64 @@ function findCodeHeader(rows = []) {
   return headers.find((header) => normalizeHeader(header).includes('CODIGO')) ?? headers[0] ?? null;
 }
 
-export function parseExtendedScheduleWorkbook(arrayBuffer, fileName, evaluationMonth) {
+export function inferExtendedScheduleMapping(rows = []) {
+  return { code: findCodeHeader(rows) };
+}
+
+export function previewExtendedScheduleWorkbook(arrayBuffer, fileName, evaluationMonth) {
   const workbook = XLSX.read(arrayBuffer, {
     type: 'array',
     cellDates: true,
     raw: false,
   });
   const selection = chooseSheetName(workbook, evaluationMonth);
+  const sheets = workbook.SheetNames.map((sheetName) => {
+    const worksheet = workbook.Sheets[sheetName];
+    const rows = worksheet ? XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: false }) : [];
+    return {
+      sheetName,
+      headers: rows.length ? Object.keys(rows[0]) : [],
+      previewRows: rows.slice(0, 5),
+      rowCount: rows.length,
+      mapping: inferExtendedScheduleMapping(rows),
+      score: sheetName === selection.sheetName ? 1 : 0,
+    };
+  });
+
+  const selectedSheet = sheets.find((sheet) => sheet.sheetName === selection.sheetName) ?? sheets[0] ?? {
+    sheetName: '',
+    headers: [],
+    previewRows: [],
+    rowCount: 0,
+    mapping: {},
+  };
+
+  return {
+    fileName,
+    selectedSheetName: selectedSheet.sheetName,
+    matchedByMonth: selection.matchedByMonth,
+    sheets,
+    headers: selectedSheet.headers,
+    previewRows: selectedSheet.previewRows,
+    mapping: selectedSheet.mapping,
+  };
+}
+
+export function parseExtendedScheduleWorkbook(arrayBuffer, fileName, evaluationMonth, options = {}) {
+  const workbook = XLSX.read(arrayBuffer, {
+    type: 'array',
+    cellDates: true,
+    raw: false,
+  });
+  const selection = options.sheetName
+    ? { sheetName: options.sheetName, matchedByMonth: false }
+    : chooseSheetName(workbook, evaluationMonth);
   const worksheet = workbook.Sheets[selection.sheetName];
   const rows = worksheet
     ? XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: false })
     : [];
-  const codeHeader = findCodeHeader(rows);
+  const mapping = { ...inferExtendedScheduleMapping(rows), ...(options.mapping ?? {}) };
+  const codeHeader = mapping.code;
   const codes = new Set();
 
   rows.forEach((row) => {
@@ -201,7 +251,7 @@ export function parseExtendedScheduleFiles(files = [], rows = [], mapping = {}, 
   const warnings = [];
 
   files.forEach((file) => {
-    const parsed = parseExtendedScheduleWorkbook(file.arrayBuffer, file.name, evaluationMonth);
+    const parsed = parseExtendedScheduleWorkbook(file.arrayBuffer, file.name, evaluationMonth, file.options);
     parsed.codes.forEach((code) => extendedEmployeeCodes.add(code));
     filesMetadata.push({
       fileName: parsed.fileName,

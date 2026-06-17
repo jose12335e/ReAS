@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import AuditReviewPanel from '../components/AuditReviewPanel.jsx';
+import AuxiliaryColumnMapper from '../components/AuxiliaryColumnMapper.jsx';
 import ColumnMapper from '../components/ColumnMapper.jsx';
 import DashboardOverview from '../components/DashboardOverview.jsx';
 import DataPreview from '../components/DataPreview.jsx';
@@ -27,6 +28,9 @@ import RulesPanel from '../components/RulesPanel.jsx';
 import UploadExcel from '../components/UploadExcel.jsx';
 import { scheduleConfig } from '../config/scheduleConfig.js';
 import { SESSION_TTL_HOURS, useAttendanceStore } from '../store/attendanceStore.js';
+import { EXTENDED_SCHEDULE_FIELD_DEFINITIONS } from '../utils/extendedScheduleReader.js';
+import { EVENTUALITY_FIELD_DEFINITIONS } from '../utils/eventualitiesReader.js';
+import { PAYROLL_FIELD_DEFINITIONS } from '../utils/payrollReader.js';
 import {
   applyAuditAdjustment,
   applyEventualityAuditDecision,
@@ -173,6 +177,11 @@ export default function Dashboard({ activeUser, onLogout }) {
   const [secondaryFiles, setSecondaryFiles] = useState([]);
   const [payrollFile, setPayrollFile] = useState(null);
   const [eventualitiesFile, setEventualitiesFile] = useState(null);
+  const [auxiliaryPreviews, setAuxiliaryPreviews] = useState({
+    extended: [],
+    payroll: null,
+    eventualities: null,
+  });
   const [preview, setPreview] = useState({ headers: [], previewRows: [], rows: [], availableMonths: [] });
   const [selectedMonth, setSelectedMonth] = useState(null);
   const [result, setResult] = useState(null);
@@ -250,6 +259,21 @@ export default function Dashboard({ activeUser, onLogout }) {
         });
       }
 
+      if (type === 'aux-preview:success') {
+        setAuxiliaryPreviews((current) => {
+          if (payload.kind === 'extended') {
+            return { ...current, extended: payload.files ?? [] };
+          }
+          if (payload.kind === 'payroll') {
+            return { ...current, payroll: payload.file ?? null };
+          }
+          if (payload.kind === 'eventualities') {
+            return { ...current, eventualities: payload.file ?? null };
+          }
+          return current;
+        });
+      }
+
       if (type === 'process:success') {
         setResult(payload);
         setActiveTab('dashboard');
@@ -315,6 +339,23 @@ export default function Dashboard({ activeUser, onLogout }) {
     workerRef.current.postMessage({ type: 'months', payload: { mapping } });
   }, [mapping, preview.headers.length]);
 
+  useEffect(() => {
+    if (!secondaryFiles.length || !selectedMonth || !workerRef.current) return;
+    requestAuxiliaryPreview('extended', async () => {
+      const filePayloads = await Promise.all(
+        secondaryFiles.map(async (file, index) => ({
+          id: `${file.name}-${index}`,
+          name: file.name,
+          arrayBuffer: await file.arrayBuffer(),
+        })),
+      );
+      return {
+        payload: { files: filePayloads },
+        transferList: filePayloads.map((file) => file.arrayBuffer),
+      };
+    });
+  }, [selectedMonth?.key]);
+
   async function handlePrimaryFile(file) {
     if (!file) return;
     const fileValidation = validateFileForUpload(file, { required: true, label: 'Excel principal' });
@@ -345,6 +386,11 @@ export default function Dashboard({ activeUser, onLogout }) {
       setErrors(mappingValidation.errors);
       return;
     }
+    const auxiliaryValidation = validateAuxiliaryMappings();
+    if (!auxiliaryValidation.isValid) {
+      setErrors(auxiliaryValidation.errors);
+      return;
+    }
     if (workbookValidation && !workbookValidation.isValid) {
       setErrors(workbookValidation.errors);
       setFileWarnings(workbookValidation.warnings);
@@ -359,21 +405,24 @@ export default function Dashboard({ activeUser, onLogout }) {
 
     try {
       const extendedScheduleFiles = await Promise.all(
-        secondaryFiles.map(async (file) => ({
+        secondaryFiles.map(async (file, index) => ({
           name: file.name,
           arrayBuffer: await file.arrayBuffer(),
+          options: previewToOptions(auxiliaryPreviews.extended[index]),
         })),
       );
       const payrollPayload = payrollFile
         ? {
             name: payrollFile.name,
             arrayBuffer: await payrollFile.arrayBuffer(),
+            options: previewToOptions(auxiliaryPreviews.payroll),
           }
         : null;
       const eventualitiesPayload = eventualitiesFile
         ? {
             name: eventualitiesFile.name,
             arrayBuffer: await eventualitiesFile.arrayBuffer(),
+            options: previewToOptions(auxiliaryPreviews.eventualities),
           }
         : null;
       const transferList = [
@@ -405,6 +454,66 @@ export default function Dashboard({ activeUser, onLogout }) {
     }
   }
 
+  function previewToOptions(previewItem) {
+    if (!previewItem) return {};
+    return {
+      sheetName: previewItem.selectedSheetName,
+      mapping: previewItem.mapping ?? {},
+    };
+  }
+
+  function validateAuxiliaryPreview(previewItem, fields, label) {
+    if (!previewItem) return [];
+    const mappingToValidate = previewItem.mapping ?? {};
+    return fields
+      .filter((field) => field.required && !mappingToValidate[field.key])
+      .map((field) => `${label}: falta mapear ${field.label}.`);
+  }
+
+  function validateAuxiliaryMappings() {
+    const errors = [
+      ...(secondaryFiles.length && auxiliaryPreviews.extended.length !== secondaryFiles.length
+        ? ['Horario extendido: espera a que termine la vista previa para confirmar columnas.']
+        : []),
+      ...(payrollFile && !auxiliaryPreviews.payroll
+        ? ['Nómina: espera a que termine la vista previa para confirmar columnas.']
+        : []),
+      ...(eventualitiesFile && !auxiliaryPreviews.eventualities
+        ? ['Eventualidades: espera a que termine la vista previa para confirmar columnas.']
+        : []),
+      ...auxiliaryPreviews.extended.flatMap((previewItem, index) =>
+        validateAuxiliaryPreview(
+          previewItem,
+          EXTENDED_SCHEDULE_FIELD_DEFINITIONS,
+          `Horario extendido ${index + 1}`,
+        ),
+      ),
+      ...validateAuxiliaryPreview(auxiliaryPreviews.payroll, PAYROLL_FIELD_DEFINITIONS, 'Nómina'),
+      ...validateAuxiliaryPreview(
+        auxiliaryPreviews.eventualities,
+        EVENTUALITY_FIELD_DEFINITIONS,
+        'Eventualidades',
+      ),
+    ];
+    return { isValid: errors.length === 0, errors };
+  }
+
+  async function requestAuxiliaryPreview(kind, payloadBuilder) {
+    if (!workerRef.current) return;
+    const { payload, transferList } = await payloadBuilder();
+    workerRef.current.postMessage(
+      {
+        type: 'aux-preview',
+        payload: {
+          kind,
+          evaluationMonth: selectedMonth,
+          ...payload,
+        },
+      },
+      transferList,
+    );
+  }
+
   function handleSecondaryFiles(files) {
     const validation = validateFilesForUpload(files, { label: 'Excel horario extendido' });
     setFileWarnings(validation.warnings);
@@ -414,6 +523,20 @@ export default function Dashboard({ activeUser, onLogout }) {
     }
     setErrors([]);
     setSecondaryFiles(files);
+    setAuxiliaryPreviews((current) => ({ ...current, extended: [] }));
+    requestAuxiliaryPreview('extended', async () => {
+      const filePayloads = await Promise.all(
+        files.map(async (file, index) => ({
+          id: `${file.name}-${index}`,
+          name: file.name,
+          arrayBuffer: await file.arrayBuffer(),
+        })),
+      );
+      return {
+        payload: { files: filePayloads },
+        transferList: filePayloads.map((file) => file.arrayBuffer),
+      };
+    });
   }
 
   function handlePayrollFile(file) {
@@ -425,6 +548,16 @@ export default function Dashboard({ activeUser, onLogout }) {
     }
     setErrors([]);
     setPayrollFile(file);
+    setAuxiliaryPreviews((current) => ({ ...current, payroll: null }));
+    if (file) {
+      requestAuxiliaryPreview('payroll', async () => {
+        const arrayBuffer = await file.arrayBuffer();
+        return {
+          payload: { file: { name: file.name, arrayBuffer } },
+          transferList: [arrayBuffer],
+        };
+      });
+    }
   }
 
   function handleEventualitiesFile(file) {
@@ -436,6 +569,16 @@ export default function Dashboard({ activeUser, onLogout }) {
     }
     setErrors([]);
     setEventualitiesFile(file);
+    setAuxiliaryPreviews((current) => ({ ...current, eventualities: null }));
+    if (file) {
+      requestAuxiliaryPreview('eventualities', async () => {
+        const arrayBuffer = await file.arrayBuffer();
+        return {
+          payload: { file: { name: file.name, arrayBuffer } },
+          transferList: [arrayBuffer],
+        };
+      });
+    }
   }
 
   function scheduleResultPersistence(nextResult) {
@@ -543,6 +686,7 @@ export default function Dashboard({ activeUser, onLogout }) {
     setSecondaryFiles([]);
     setPayrollFile(null);
     setEventualitiesFile(null);
+    setAuxiliaryPreviews({ extended: [], payroll: null, eventualities: null });
     setPreview({ headers: [], previewRows: [], rows: [], availableMonths: [] });
     setSelectedMonth(null);
     setResult(null);
@@ -839,6 +983,17 @@ export default function Dashboard({ activeUser, onLogout }) {
             <ProgressBar progress={progress} status={status} />
 
             <ValidationSummaryPanel validation={workbookValidation} fileWarnings={fileWarnings} />
+
+            <AuxiliaryColumnMapper
+              previews={auxiliaryPreviews}
+              fields={{
+                extended: EXTENDED_SCHEDULE_FIELD_DEFINITIONS,
+                payroll: PAYROLL_FIELD_DEFINITIONS,
+                eventualities: EVENTUALITY_FIELD_DEFINITIONS,
+              }}
+              disabled={isBusy}
+              onChange={setAuxiliaryPreviews}
+            />
 
             {preview.availableMonths?.length ? (
               <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70">

@@ -22,6 +22,19 @@ const HEADER_ALIASES = {
   comment: ['COMENTARIO', 'COMENTARIOS', 'OBSERVACION', 'OBSERVACIONES', 'NOTA', 'DETALLE'],
 };
 
+export const EVENTUALITY_FIELD_DEFINITIONS = [
+  { key: 'code', label: 'Codigo empleado', required: true },
+  { key: 'name', label: 'Nombre', required: false },
+  { key: 'type', label: 'Tipo de eventualidad', required: true },
+  { key: 'location', label: 'Ubicacion', required: false },
+  { key: 'startDate', label: 'Fecha inicio', required: true },
+  { key: 'endDate', label: 'Fecha fin', required: false },
+  { key: 'days', label: 'Cantidad dias', required: false },
+  { key: 'hours', label: 'Cantidad horas', required: false },
+  { key: 'status', label: 'Estado', required: false },
+  { key: 'comment', label: 'Comentario', required: false },
+];
+
 export const EVENTUALITY_TYPES = {
   VACATION: 'vacacion',
   LICENSE: 'licencia',
@@ -83,7 +96,7 @@ function findHeader(headers, aliases) {
   );
 }
 
-function inferMapping(rows = []) {
+export function inferEventualityMapping(rows = []) {
   const headers = rows.length ? Object.keys(rows[0]) : [];
   return Object.fromEntries(
     Object.entries(HEADER_ALIASES).map(([field, aliases]) => [field, findHeader(headers, aliases)]),
@@ -91,11 +104,47 @@ function inferMapping(rows = []) {
 }
 
 function scoreSheet(rows = []) {
-  const mapping = inferMapping(rows);
+  const mapping = inferEventualityMapping(rows);
+  return scoreEventualityMapping(mapping);
+}
+
+function scoreEventualityMapping(mapping = {}) {
   return ['code', 'type', 'startDate', 'endDate', 'days', 'hours'].reduce(
     (score, field) => score + (mapping[field] ? 1 : 0),
     0,
   );
+}
+
+export function previewEventualitiesWorkbook(arrayBuffer, fileName) {
+  if (!arrayBuffer) return null;
+  const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true, raw: false });
+  const sheets = workbook.SheetNames.map((sheetName) => {
+    const rows = parseSheetRows(workbook, sheetName);
+    return {
+      sheetName,
+      headers: rows.length ? Object.keys(rows[0]) : [],
+      previewRows: rows.slice(0, 5),
+      rowCount: rows.length,
+      mapping: inferEventualityMapping(rows),
+      score: scoreSheet(rows),
+    };
+  }).sort((a, b) => b.score - a.score || b.rowCount - a.rowCount);
+  const selectedSheet = sheets[0] ?? {
+    sheetName: '',
+    headers: [],
+    previewRows: [],
+    rowCount: 0,
+    mapping: {},
+  };
+
+  return {
+    fileName,
+    selectedSheetName: selectedSheet.sheetName,
+    sheets,
+    headers: selectedSheet.headers,
+    previewRows: selectedSheet.previewRows,
+    mapping: selectedSheet.mapping,
+  };
 }
 
 export function normalizeEventualityType(value = '') {
@@ -206,7 +255,7 @@ export function findEventualitiesForRow(index = {}, code, date) {
   return Array.from(new Map(matches.map((record) => [record.id, record])).values());
 }
 
-export function parseEventualitiesWorkbook(arrayBuffer, fileName, evaluationMonth) {
+export function parseEventualitiesWorkbook(arrayBuffer, fileName, evaluationMonth, options = {}) {
   if (!arrayBuffer) {
     return {
       enabled: false,
@@ -233,10 +282,11 @@ export function parseEventualitiesWorkbook(arrayBuffer, fileName, evaluationMont
   let unknownTypes = 0;
   let ignoredInformationalRows = 0;
 
-  workbook.SheetNames.forEach((sheetName) => {
+  const sheetNames = options.sheetName ? [options.sheetName] : workbook.SheetNames;
+  sheetNames.forEach((sheetName) => {
     const rows = parseSheetRows(workbook, sheetName);
-    const mapping = inferMapping(rows);
-    const score = scoreSheet(rows);
+    const mapping = { ...inferEventualityMapping(rows), ...(options.mapping ?? {}) };
+    const score = scoreEventualityMapping(mapping);
     if (score < 3) return;
 
     sheets.push({ sheetName, rowCount: rows.length, mapping });
