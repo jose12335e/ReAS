@@ -1065,6 +1065,11 @@ export default function Dashboard({ activeUser, onLogout }) {
                   {result.metadata.payroll.fileName}: hoja "{result.metadata.payroll.sheetName}",{' '}
                   {result.metadata.excludedRowsByPayroll ?? 0} fila(s) excluida(s) de cálculos.
                 </div>
+                {result.metadata.missingPayrollSummary?.totalEmployees ? (
+                  <div className="mt-1 font-semibold text-rose-800">
+                    {result.metadata.missingPayrollSummary.totalEmployees} empleado(s) del ponchado no aparecen en nómina.
+                  </div>
+                ) : null}
               </div>
             ) : null}
 

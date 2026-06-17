@@ -93,6 +93,7 @@ export default function DashboardOverview({ result }) {
   const totalTardanzas = Number(summary.tardanzasJustificadas || 0) + Number(summary.tardanzasNoJustificadas || 0);
   const totalSalidas =
     Number(summary.salidasTempranasJustificadas || 0) + Number(summary.salidasTempranasNoJustificadas || 0);
+  const missingPayrollSummary = result.metadata?.missingPayrollSummary;
   const totalNoTrabajadoMin =
     parseDurationToMinutes(summary.tiempoNoTrabajadoJustificado) +
     parseDurationToMinutes(summary.tiempoNoTrabajadoNoJustificado);
@@ -130,6 +131,21 @@ export default function DashboardOverview({ result }) {
 
   return (
     <section className="space-y-5">
+      {missingPayrollSummary?.totalEmployees ? (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 shadow-sm shadow-rose-100">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <div className="font-semibold">Empleados del ponchado no encontrados en nómina</div>
+              <p className="mt-1">
+                {missingPayrollSummary.totalEmployees.toLocaleString('es-DO')} empleado(s) y{' '}
+                {Number(missingPayrollSummary.totalRows || 0).toLocaleString('es-DO')} fila(s) requieren revisión.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={Users} label="Empleados analizados" value={totalEmployees.toLocaleString('es-DO')} tone="navy" />
         <StatCard icon={FileSpreadsheet} label="Registros procesados" value={processedRows.toLocaleString('es-DO')} tone="green" />

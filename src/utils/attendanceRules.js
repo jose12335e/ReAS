@@ -687,6 +687,8 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
 export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
   const extendedEmployeeCodes = new Set(options.extendedEmployeeCodes ?? []);
   const payrollEmployeesByCode = options.payrollEmployeesByCode ?? {};
+  const hasPayrollRecords = Object.keys(payrollEmployeesByCode).length > 0;
+  const missingPayrollEmployees = new Map();
   const employees = new Map();
   const locations = new Map();
   const schedules = new Map();
@@ -708,9 +710,26 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
     eventualidadesJustificadas: [],
   };
 
+  function registerMissingPayrollEmployee(rawRow, index, rawCode) {
+    if (!hasPayrollRecords || !rawCode) return false;
+    const current = missingPayrollEmployees.get(rawCode) ?? {
+      codigo: rawCode,
+      nombre: clean(asValue(rawRow, mapping, 'nombre')),
+      ubicacion: clean(asValue(rawRow, mapping, 'ubicacion')),
+      firstRow: index + 1,
+      rowCount: 0,
+    };
+    current.nombre = current.nombre || clean(asValue(rawRow, mapping, 'nombre'));
+    current.ubicacion = current.ubicacion || clean(asValue(rawRow, mapping, 'ubicacion'));
+    current.rowCount += 1;
+    missingPayrollEmployees.set(rawCode, current);
+    return true;
+  }
+
   rows.forEach((rawRow, index) => {
     const rawCode = clean(asValue(rawRow, mapping, 'codigo'));
     const payrollRecord = findPayrollRecord(payrollEmployeesByCode, rawCode);
+    const isMissingFromPayroll = !payrollRecord && registerMissingPayrollEmployee(rawRow, index, rawCode);
     const isBeforePayrollHireDate = isBeforeHireDate(rawRow, mapping, payrollRecord);
     if (payrollRecord?.excluded) {
       excludedRowsByPayroll += 1;
@@ -788,6 +807,13 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
       processedRow.CEDULA = row.cedula;
       processedRow['Fecha ingreso'] = row.fechaIngreso;
     }
+    if (isMissingFromPayroll) {
+      const alert = 'No encontrado en nómina';
+      processedRow['Alerta nómina'] = alert;
+      processedRow['Observación procesada'] = [processedRow['Observación procesada'], alert]
+        .filter(Boolean)
+        .join('; ');
+    }
 
     const employeeKey = `${row.ubicacion}::${row.codigo}::${row.nombre}`;
     if (!employees.has(employeeKey)) {
@@ -853,6 +879,17 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
     .sort((a, b) => a.ubicacion.localeCompare(b.ubicacion));
 
   const scheduleSummary = Array.from(schedules.values()).map(finalizeMetricRow);
+  const missingPayrollList = Array.from(missingPayrollEmployees.values()).sort((a, b) =>
+    String(a.codigo).localeCompare(String(b.codigo), 'es'),
+  );
+  const missingPayrollWarnings = missingPayrollList.slice(0, 20).map((employee) =>
+    `Código ${employee.codigo} no aparece en nómina (${employee.nombre || 'sin nombre'}, fila ${employee.firstRow}, ${employee.rowCount} registro(s)).`,
+  );
+  if (missingPayrollList.length > missingPayrollWarnings.length) {
+    missingPayrollWarnings.push(
+      `Hay ${(missingPayrollList.length - missingPayrollWarnings.length).toLocaleString('es-DO')} código(s) adicional(es) del ponchado que no aparecen en nómina.`,
+    );
+  }
 
   return {
     processedRows,
@@ -866,6 +903,12 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
       processedRows: processedRows.length,
       excludedRowsByPayroll,
       payrollExclusionSummary,
+      missingPayrollEmployees: missingPayrollList,
+      missingPayrollSummary: {
+        totalEmployees: missingPayrollList.length,
+        totalRows: missingPayrollList.reduce((total, employee) => total + employee.rowCount, 0),
+      },
+      warnings: missingPayrollWarnings,
       generatedAt: new Date().toISOString(),
     },
   };

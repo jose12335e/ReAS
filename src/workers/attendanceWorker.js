@@ -175,6 +175,7 @@ self.onmessage = async (event) => {
             stats: eventualities.stats,
           },
           warnings: [
+            ...(result.metadata?.warnings ?? []),
             ...extendedSchedule.warnings,
             ...payroll.warnings,
             ...eventualities.warnings,
