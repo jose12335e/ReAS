@@ -300,13 +300,14 @@ function DetailCard({
 }) {
   const differenceMin = Number(detail?.diferenciaMin || employee.diferenciaMin || 0);
   const isMissing = differenceMin > 0;
+  const requiresTimeEntry = Boolean(detail?.requiereCapturaTiempo);
   const defaultTime = defaultAdjustmentTime(employee, detail);
   const adjustmentTime = manualTime ?? defaultTime;
   const adjustmentMinutes = Math.abs(parseDurationToMinutes(adjustmentTime));
   const justifiedAvailable = parseDurationToMinutes(employee.tiempoNoTrabajadoJustificado);
   const unjustifiedAvailable = parseDurationToMinutes(employee.tiempoNoTrabajadoNoJustificado);
-  const canReduceJustified = isMissing || justifiedAvailable > 0;
-  const canReduceUnjustified = isMissing || unjustifiedAvailable > 0;
+  const canApplyJustified = requiresTimeEntry || isMissing || justifiedAvailable > 0;
+  const canApplyUnjustified = requiresTimeEntry || isMissing || unjustifiedAvailable > 0;
   const scopeLabel = `fila ${detail?.fila || '-'} ${detail?.fecha || ''}`.trim();
 
   return (
@@ -322,6 +323,11 @@ function DetailCard({
             </span>
           </div>
           <p className="mt-1 text-xs font-medium text-slate-700">{detail?.posibleFallo || employee.posibleCausa}</p>
+          {requiresTimeEntry ? (
+            <p className="mt-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-900">
+              Este permiso no tiene tiempo registrado. Escribe el tiempo del ajuste y registralo desde aqui.
+            </p>
+          ) : null}
         </div>
 
         <label className="grid gap-1 text-xs font-semibold uppercase text-slate-500 sm:min-w-40">
@@ -375,7 +381,7 @@ function DetailCard({
           </span>
         </AdjustmentButton>
         <AdjustmentButton
-          disabled={disabled || !adjustmentMinutes || !canReduceJustified}
+          disabled={disabled || !adjustmentMinutes || !canApplyJustified}
           onClick={() =>
             onApply('justified', {
               adjustmentMinutes,
@@ -385,11 +391,11 @@ function DetailCard({
             })
           }
         >
-          {isMissing ? 'Sumar a justificado' : 'Reducir justificado'}
+          {requiresTimeEntry ? 'Registrar justificado' : isMissing ? 'Sumar a justificado' : 'Reducir justificado'}
         </AdjustmentButton>
         <AdjustmentButton
           tone="navy"
-          disabled={disabled || !adjustmentMinutes || !canReduceUnjustified}
+          disabled={disabled || !adjustmentMinutes || !canApplyUnjustified}
           onClick={() =>
             onApply('unjustified', {
               adjustmentMinutes,
@@ -399,7 +405,7 @@ function DetailCard({
             })
           }
         >
-          {isMissing ? 'Sumar a no justificado' : 'Reducir no justificado'}
+          {requiresTimeEntry ? 'Registrar no justificado' : isMissing ? 'Sumar a no justificado' : 'Reducir no justificado'}
         </AdjustmentButton>
       </div>
     </article>

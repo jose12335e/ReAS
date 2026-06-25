@@ -141,6 +141,11 @@ function buildDailyAuditDetail(row) {
     totalCalculado: formatMinutes(explainedMin),
     diferenciaMin: differenceMin,
     diferencia: formatMinutes(differenceMin),
+    requiereCapturaTiempo:
+      /permiso/i.test(observation) &&
+      !processedRowValue(row, 'Tiempo observaciones') &&
+      justifiedMin === 0 &&
+      unjustifiedMin === 0,
     estadoFinal: state || 'Sin estado',
     posibleFallo: reviewHints[0] ?? 'Revisar clasificación del día.',
     pistas: reviewHints,
@@ -149,10 +154,20 @@ function buildDailyAuditDetail(row) {
 
 function buildDailyAuditDetails(processedRows = [], employeeDifferenceMin = 0) {
   const details = processedRows.map(buildDailyAuditDetail);
+  const timeEntryFindings = details.filter((detail) => detail.requiereCapturaTiempo);
   const directFindings = details.filter((detail) => detail.diferenciaMin !== 0);
   if (directFindings.length) {
-    return directFindings.sort(
+    const mergedFindings = [...timeEntryFindings, ...directFindings].filter(
+      (detail, index, list) =>
+        list.findIndex((current) => current.fila === detail.fila && current.fecha === detail.fecha) === index,
+    );
+    return mergedFindings.sort(
       (a, b) => Math.abs(b.diferenciaMin) - Math.abs(a.diferenciaMin),
+    );
+  }
+  if (timeEntryFindings.length) {
+    return timeEntryFindings.sort(
+      (a, b) => String(a.fecha || '').localeCompare(String(b.fecha || ''), 'es'),
     );
   }
 
@@ -186,8 +201,11 @@ export function auditEmployee(employee, processedRows = []) {
   const explainedMin = recognizedMin + justifiedMin + unjustifiedMin;
   const differenceMin = expectedMin - explainedMin;
   const detalles = buildDailyAuditDetails(processedRows, differenceMin);
+  const requiereCapturaTiempo = detalles.some((detail) => detail.requiereCapturaTiempo);
   const status =
-    differenceMin === 0
+    requiereCapturaTiempo
+      ? 'Requiere revision - capturar tiempo'
+      : differenceMin === 0
       ? 'Cuadrado'
       : differenceMin > 0
         ? 'Requiere revisión - falta tiempo'
@@ -206,7 +224,8 @@ export function auditEmployee(employee, processedRows = []) {
     diferenciaMin: differenceMin,
     diferencia: formatMinutes(differenceMin),
     estadoCuadre: status,
-    requiereRevision: differenceMin !== 0,
+    requiereRevision: differenceMin !== 0 || requiereCapturaTiempo,
+    requiereCapturaTiempo,
     detalles,
     posibleCausa:
       detalles[0]?.posibleFallo ??
@@ -591,7 +610,9 @@ function markEventualityDecision(
 
 export function applyAuditAdjustment(result, employeeAudit, bucket, options = {}) {
   const difference = Number(options.differenceMin ?? employeeAudit?.diferenciaMin ?? 0);
-  if (!difference || !employeeAudit?.codigo) return result;
+  const detail = options.detail ?? null;
+  const registersMissingTime = difference === 0 && Boolean(detail?.requiereCapturaTiempo);
+  if ((!difference && !registersMissingTime) || !employeeAudit?.codigo) return result;
   const requestedMinutes =
     options.adjustmentMinutes == null
       ? Math.abs(difference)
@@ -612,10 +633,18 @@ export function applyAuditAdjustment(result, employeeAudit, bucket, options = {}
         ? 'tiempoNoTrabajadoJustificado'
         : 'tiempoNoTrabajadoNoJustificado';
     const currentMinutes = parseDurationToMinutes(employee[field]);
-    const delta = difference > 0 ? requestedMinutes : -Math.min(requestedMinutes, currentMinutes);
+    const delta = registersMissingTime
+      ? requestedMinutes
+      : difference > 0
+        ? requestedMinutes
+        : -Math.min(requestedMinutes, currentMinutes);
     const scopeLabel = options.scopeLabel ? ` (${options.scopeLabel})` : '';
     adjustmentLabel =
-      difference > 0
+      registersMissingTime
+        ? `Registro de tiempo${scopeLabel}: +${formatMinutes(Math.abs(delta))} en ${
+            bucket === 'justified' ? 'tiempo justificado' : 'tiempo no justificado'
+          }`
+        : difference > 0
         ? `Ajuste de cuadre${scopeLabel}: +${formatMinutes(Math.abs(delta))} en ${
             bucket === 'justified' ? 'tiempo justificado' : 'tiempo no justificado'
           }`
@@ -626,16 +655,36 @@ export function applyAuditAdjustment(result, employeeAudit, bucket, options = {}
     return {
       ...employee,
       [field]: updateDuration(employee[field], delta),
+      ...(registersMissingTime
+        ? {
+            horasReconocidas: subtractHours(
+              employee.horasReconocidas ?? employee.horasTrabajadasReconocidas,
+              requestedMinutes,
+            ),
+            horasTrabajadasReconocidas: subtractHours(
+              employee.horasTrabajadasReconocidas ?? employee.horasReconocidas,
+              requestedMinutes,
+            ),
+            ...(bucket === 'justified'
+              ? {
+                  eventualidadesJustificadas: increment(employee.eventualidadesJustificadas),
+                  tiempoEventualidadJustificada: updateDuration(
+                    employee.tiempoEventualidadJustificada,
+                    requestedMinutes,
+                  ),
+                }
+              : {}),
+          }
+        : {}),
       observacionProcesada: [employee.observacionProcesada, adjustmentLabel].filter(Boolean).join('; '),
       estadoFinal: [employee.estadoFinal, 'Cuadre revisado manualmente'].filter(Boolean).join('; '),
       ajusteCuadre: [employee.ajusteCuadre, adjustmentLabel].filter(Boolean).join('; '),
     };
   });
-  const detail = options.detail ?? null;
   const processedRows = [...(result.processedRows ?? [])];
 
   if (adjustmentLabel) {
-    if (difference > 0) {
+    if (difference > 0 || registersMissingTime) {
       const targetIndex = processedRows.findIndex((row) =>
         detail
           ? rowMatchesAuditDetail(row, employeeAudit, detail)
@@ -643,6 +692,11 @@ export function applyAuditAdjustment(result, employeeAudit, bucket, options = {}
       );
       if (targetIndex >= 0) {
         const row = updateProcessedRowDuration(processedRows[targetIndex], bucket, requestedMinutes);
+        if (registersMissingTime) {
+          row['Horas trabajadas reconocidas'] = minutesToHours(
+            Math.max(0, hoursToMinutes(row['Horas trabajadas reconocidas']) - requestedMinutes),
+          );
+        }
         processedRows[targetIndex] = {
           ...row,
           'Observación procesada': appendAuditText(row['Observación procesada'], adjustmentLabel),
