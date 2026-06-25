@@ -16,17 +16,19 @@ import {
   UploadCloud,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import AppSidebar from '../components/AppSidebar.jsx';
 import AuditReviewPanel from '../components/AuditReviewPanel.jsx';
 import AuxiliaryColumnMapper from '../components/AuxiliaryColumnMapper.jsx';
 import ColumnMapper from '../components/ColumnMapper.jsx';
 import DashboardOverview from '../components/DashboardOverview.jsx';
 import DataPreview from '../components/DataPreview.jsx';
 import EmployeeAlerts from '../components/EmployeeAlerts.jsx';
+import PageHeader from '../components/PageHeader.jsx';
 import ReportsPanel from '../components/ReportsPanel.jsx';
 import ResultsExplorer from '../components/ResultsExplorer.jsx';
 import RulesPanel from '../components/RulesPanel.jsx';
 import UploadExcel from '../components/UploadExcel.jsx';
-import { scheduleConfig } from '../config/scheduleConfig.js';
+import { SCHEDULE_TYPES, scheduleConfig } from '../config/scheduleConfig.js';
 import { SESSION_TTL_HOURS, useAttendanceStore } from '../store/attendanceStore.js';
 import { EXTENDED_SCHEDULE_FIELD_DEFINITIONS } from '../utils/extendedScheduleReader.js';
 import { EVENTUALITY_FIELD_DEFINITIONS } from '../utils/eventualitiesReader.js';
@@ -773,10 +775,175 @@ export default function Dashboard({ activeUser, onLogout }) {
     },
   ];
 
+  const activeTabInfo = tabs.find((tab) => tab.id === activeTab) ?? tabs[0];
+  const pageMeta = {
+    dashboard: {
+      title: 'Procesamiento de asistencia',
+      subtitle: 'Resumen ejecutivo, auditoría de descuadres y métricas principales del reporte.',
+    },
+    upload: {
+      title: 'Cargar archivos',
+      subtitle: 'Sube el ponchado, cruza archivos auxiliares y valida la estructura antes de procesar.',
+    },
+    rules: {
+      title: 'Configuración de reglas',
+      subtitle: 'Consulta y ajusta los horarios usados para calcular días, horas y eventualidades.',
+    },
+    results: {
+      title: 'Resultados',
+      subtitle: 'Explora la data procesada con filtros, búsqueda y lectura rápida por empleado.',
+    },
+    reports: {
+      title: 'Reportes',
+      subtitle: 'Genera el Excel institucional con trazabilidad, tablas y resúmenes.',
+    },
+    alerts: {
+      title: 'Alertas',
+      subtitle: 'Identifica colaboradores con mayor concentración de eventualidades por área.',
+    },
+  };
+  const currentPage = pageMeta[activeTab] ?? pageMeta.dashboard;
+  const headerActions = (
+    <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:grid-cols-2 xl:w-[640px]">
+      <label className="grid gap-1.5">
+        <span className="text-xs font-semibold uppercase text-slate-500">Horario base</span>
+        <select
+          className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+          value={defaultScheduleType}
+          disabled={isBusy}
+          onChange={(event) => {
+            if (
+              result &&
+              !window.confirm('Cambiar el horario base limpiará el resultado actual. ¿Deseas continuar?')
+            ) {
+              return;
+            }
+            setDefaultScheduleType(event.target.value);
+            setResult(null);
+            clearLastResult();
+          }}
+        >
+          {Object.values(scheduleConfig).map((schedule) => (
+            <option key={schedule.id} value={schedule.id}>
+              {schedule.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="grid gap-1.5">
+        <span className="text-xs font-semibold uppercase text-slate-500">No. DGH del reporte</span>
+        <input
+          className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+          type="text"
+          value={dghCode}
+          disabled={isBusy}
+          placeholder="JCE-DGH-6064-2026"
+          onChange={(event) => setDghCode(event.target.value)}
+        />
+      </label>
+      <label className="grid gap-1.5">
+        <span className="text-xs font-semibold uppercase text-slate-500">Nombre del Excel</span>
+        <input
+          className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+          type="text"
+          value={exportFilename}
+          disabled={isBusy}
+          placeholder="reporte-asistencia"
+          onChange={(event) => setExportFilename(event.target.value)}
+        />
+      </label>
+      <div className="grid gap-2">
+        <span className="text-xs font-semibold uppercase text-slate-500">Acciones rápidas</span>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-teal-200 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
+            type="button"
+            disabled={isBusy}
+            onClick={handleNewReport}
+          >
+            <FilePlus2 className="h-3.5 w-3.5" />
+            Nuevo
+          </button>
+          <button
+            className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-xs font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
+              saveSession
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+            }`}
+            type="button"
+            role="switch"
+            aria-checked={saveSession}
+            disabled={isBusy}
+            onClick={() => handleSaveSessionChange(!saveSession)}
+          >
+            <HardDrive className="h-3.5 w-3.5" />
+            {saveSession ? 'Guardando' : 'No guardar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <main className="min-h-screen bg-[#eef3f7]">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
-        <header className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
+      <div className="flex min-h-screen">
+        <AppSidebar
+          tabs={tabs}
+          activeTab={activeTab}
+          activeUser={activeUser}
+          onTabChange={setActiveTab}
+          onLogout={onLogout}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
+        <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm shadow-slate-200/70 lg:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="grid h-10 w-10 place-items-center rounded-xl bg-slate-950 text-white">
+                <ShieldCheck className="h-5 w-5" />
+              </span>
+              <div>
+                <div className="text-sm font-semibold text-slate-950">ReAS</div>
+                <div className="text-xs font-medium text-slate-500">Gestión Humana</div>
+              </div>
+            </div>
+            <button
+              className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600"
+              type="button"
+              onClick={onLogout}
+            >
+              Salir
+            </button>
+          </div>
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                className={`shrink-0 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                  activeTab === tab.id
+                    ? 'bg-slate-950 text-white'
+                    : 'border border-slate-200 bg-slate-50 text-slate-600'
+                } ${tab.disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+                type="button"
+                disabled={tab.disabled}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <PageHeader
+          title={currentPage.title}
+          subtitle={currentPage.subtitle}
+          breadcrumb={['ReAS', activeTabInfo.label]}
+          activeUser={activeUser}
+          onLogout={onLogout}
+          actions={headerActions}
+        />
+
+        <header className="hidden rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-3">
@@ -941,7 +1108,7 @@ export default function Dashboard({ activeUser, onLogout }) {
           </div>
         </section>
 
-        <nav className="grid gap-3 md:grid-cols-2 xl:grid-cols-6" aria-label="Secciones del sistema">
+        <nav className="hidden gap-3 md:grid-cols-2 xl:grid-cols-6" aria-label="Secciones del sistema">
           {tabs.map((tab) => (
             <TabButton
               key={tab.id}
@@ -964,7 +1131,12 @@ export default function Dashboard({ activeUser, onLogout }) {
               </div>
             ) : null}
 
-            <DashboardOverview result={result} />
+            <DashboardOverview
+              result={result}
+              onStartUpload={() => setActiveTab('upload')}
+              activeRulesCount={3}
+              hasPendingAudit={hasPendingAudit}
+            />
 
             {result ? (
               <AuditReviewPanel
@@ -1145,6 +1317,17 @@ export default function Dashboard({ activeUser, onLogout }) {
               setResult(null);
               clearLastResult();
             }}
+            onSelectModifiedSchedule={() => {
+              if (
+                result &&
+                !window.confirm('Cambiar a Horario modificado limpiará el resultado actual. ¿Deseas continuar?')
+              ) {
+                return;
+              }
+              setDefaultScheduleType(SCHEDULE_TYPES.MODIFIED);
+              setResult(null);
+              clearLastResult();
+            }}
           />
         ) : null}
 
@@ -1163,6 +1346,8 @@ export default function Dashboard({ activeUser, onLogout }) {
         ) : null}
 
         {activeTab === 'alerts' ? <EmployeeAlerts result={result} /> : null}
+      </div>
+        </div>
       </div>
     </main>
   );

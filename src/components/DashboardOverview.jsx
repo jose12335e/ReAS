@@ -1,9 +1,13 @@
 import {
   AlertTriangle,
   Clock3,
+  FileCheck2,
+  FilePlus2,
   FileSpreadsheet,
   LogOut,
   MapPin,
+  Settings,
+  ShieldCheck,
   TimerOff,
   Users,
 } from 'lucide-react';
@@ -23,6 +27,7 @@ import {
   YAxis,
 } from 'recharts';
 import { parseDurationToMinutes } from '../utils/timeUtils.js';
+import MetricCard from './MetricCard.jsx';
 
 const EVENT_COLORS = {
   ausencias: '#e11d48',
@@ -51,13 +56,13 @@ function StatCard({ icon: Icon, label, value, tone = 'slate' }) {
   };
 
   return (
-    <div className={`rounded-lg border border-l-4 border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70 ${tones[tone]}`}>
+    <div className={`rounded-2xl border border-l-4 border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70 ${tones[tone]}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase text-slate-500">{label}</div>
           <div className="mt-2 text-2xl font-semibold text-slate-950">{value}</div>
         </div>
-        <span className="grid h-10 w-10 place-items-center rounded-lg bg-white/80 shadow-sm ring-1 ring-slate-200">
+        <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/80 shadow-sm ring-1 ring-slate-200">
           <Icon className="h-5 w-5" />
         </span>
       </div>
@@ -65,28 +70,80 @@ function StatCard({ icon: Icon, label, value, tone = 'slate' }) {
   );
 }
 
-function EmptyDashboard() {
+function EmptyDashboard({ onStartUpload, activeRulesCount = 3 }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm shadow-slate-200/70">
-      <div className="flex items-start gap-3">
-        <span className="grid h-10 w-10 place-items-center rounded-lg bg-slate-100 text-slate-600">
-          <FileSpreadsheet className="h-5 w-5" />
-        </span>
-        <div>
-          <h2 className="text-base font-semibold text-slate-950">Dashboard pendiente de datos</h2>
-          <p className="mt-1">
-            Carga y procesa un archivo para ver las métricas, gráficos y resumen institucional.
-          </p>
+    <section className="space-y-5">
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricCard
+          icon={FileSpreadsheet}
+          label="Estado del reporte"
+          value="Pendiente"
+          description="Carga el Excel principal para iniciar."
+          tone="blue"
+        />
+        <MetricCard
+          icon={Settings}
+          label="Reglas disponibles"
+          value={activeRulesCount}
+          description="HN, HE y horario modificado."
+          tone="teal"
+        />
+        <MetricCard
+          icon={ShieldCheck}
+          label="Auditoría"
+          value="Lista"
+          description="Se activa luego del procesamiento."
+          tone="amber"
+        />
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/70">
+        <div className="grid gap-0 lg:grid-cols-[1fr_360px]">
+          <div className="p-6 sm:p-8">
+            <span className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800">
+              <FilePlus2 className="h-3.5 w-3.5" />
+              Primer paso
+            </span>
+            <h2 className="mt-4 max-w-2xl text-2xl font-semibold tracking-normal text-slate-950">
+              Carga un archivo para generar el dashboard institucional.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+              Cuando proceses la asistencia, aquí aparecerán las métricas, los gráficos, el ranking de casos y la
+              auditoría de descuadres para revisar antes de exportar.
+            </p>
+            <button
+              className="mt-5 inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-sm shadow-slate-900/10 transition hover:bg-slate-800"
+              type="button"
+              onClick={onStartUpload}
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Cargar archivos
+            </button>
+          </div>
+          <div className="border-t border-slate-200 bg-slate-50 p-6 lg:border-l lg:border-t-0">
+            <div className="text-xs font-semibold uppercase text-slate-500">Flujo recomendado</div>
+            <ol className="mt-3 space-y-3 text-sm text-slate-700">
+              <li className="rounded-xl bg-white p-3 ring-1 ring-slate-200">1. Cargar ponchado y auxiliares.</li>
+              <li className="rounded-xl bg-white p-3 ring-1 ring-slate-200">2. Validar mes y columnas.</li>
+              <li className="rounded-xl bg-white p-3 ring-1 ring-slate-200">3. Procesar y revisar auditoría.</li>
+              <li className="rounded-xl bg-white p-3 ring-1 ring-slate-200">4. Exportar Excel final.</li>
+            </ol>
+          </div>
         </div>
       </div>
     </section>
   );
 }
 
-export default function DashboardOverview({ result }) {
-  if (!result) return <EmptyDashboard />;
+export default function DashboardOverview({
+  result,
+  onStartUpload,
+  activeRulesCount = 3,
+  hasPendingAudit = false,
+}) {
+  if (!result) return <EmptyDashboard onStartUpload={onStartUpload} activeRulesCount={activeRulesCount} />;
 
-  const summary = result.summaryGeneral;
+  const summary = result.summaryGeneral ?? {};
   const totalEmployees = result.summaryByEmployee?.length ?? 0;
   const processedRows = result.metadata?.processedRows ?? result.processedRows?.length ?? 0;
   const totalAusencias = Number(summary.ausenciasJustificadas || 0) + Number(summary.ausenciasNoJustificadas || 0);
@@ -131,8 +188,32 @@ export default function DashboardOverview({ result }) {
 
   return (
     <section className="space-y-5">
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricCard
+          icon={FileCheck2}
+          label="Estado del reporte"
+          value="Procesado"
+          description={`${processedRows.toLocaleString('es-DO')} registros validados.`}
+          tone="teal"
+        />
+        <MetricCard
+          icon={ShieldCheck}
+          label="Auditoría"
+          value={hasPendingAudit ? 'Revisar' : 'Cuadrada'}
+          description={hasPendingAudit ? 'Hay descuadres pendientes.' : 'Sin descuadres activos.'}
+          tone={hasPendingAudit ? 'amber' : 'teal'}
+        />
+        <MetricCard
+          icon={Settings}
+          label="Reglas activas"
+          value={activeRulesCount}
+          description="Configuración lista para exportar."
+          tone="blue"
+        />
+      </div>
+
       {missingPayrollSummary?.totalEmployees ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 shadow-sm shadow-rose-100">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 shadow-sm shadow-rose-100">
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
             <div>
@@ -158,7 +239,7 @@ export default function DashboardOverview({ result }) {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
           <h2 className="text-base font-semibold text-slate-950">Distribución de eventualidades</h2>
           <div className="mt-4 h-72">
             <ResponsiveContainer width="100%" height="100%">
@@ -175,7 +256,7 @@ export default function DashboardOverview({ result }) {
           </div>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
           <h2 className="text-base font-semibold text-slate-950">Eventualidades por ubicación</h2>
           <div className="mt-4 h-72">
             <ResponsiveContainer width="100%" height="100%">
@@ -194,7 +275,7 @@ export default function DashboardOverview({ result }) {
         </div>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
         <h2 className="text-base font-semibold text-slate-950">Tendencia por fecha</h2>
         <div className="mt-4 h-72">
           <ResponsiveContainer width="100%" height="100%">

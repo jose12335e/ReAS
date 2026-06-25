@@ -1,4 +1,70 @@
-import { ClipboardCheck, FileSpreadsheet, Files, Upload } from 'lucide-react';
+import {
+  ClipboardCheck,
+  FileSpreadsheet,
+  Files,
+  LockKeyhole,
+  ShieldCheck,
+} from 'lucide-react';
+import InfoPanel from './InfoPanel.jsx';
+import UploadDropzone from './UploadDropzone.jsx';
+
+function FileTypeCard({
+  icon: Icon,
+  title,
+  required,
+  description,
+  selectedText,
+  tone = 'teal',
+  multiple,
+  disabled,
+  onChange,
+}) {
+  const tones = {
+    teal: 'border-teal-200 bg-teal-50/60 text-teal-700',
+    blue: 'border-sky-200 bg-sky-50/60 text-sky-700',
+    amber: 'border-amber-200 bg-amber-50/70 text-amber-700',
+    violet: 'border-violet-200 bg-violet-50/60 text-violet-700',
+  };
+
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70">
+      <div className="flex items-start gap-3">
+        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl border ${tones[tone]}`}>
+          <Icon className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                required ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-500'
+              }`}
+            >
+              {required ? 'Requerido' : 'Opcional'}
+            </span>
+          </div>
+          <p className="mt-1 text-sm leading-5 text-slate-600">{selectedText || description}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+          <label className="inline-flex h-9 cursor-pointer items-center rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed">
+            Seleccionar archivo
+            <input
+              className="sr-only"
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              multiple={multiple}
+              disabled={disabled}
+              onChange={onChange}
+            />
+          </label>
+            <span className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-600">
+              Ver estructura requerida
+            </span>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
 
 export default function UploadExcel({
   primaryFile,
@@ -12,100 +78,77 @@ export default function UploadExcel({
   disabled,
 }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-slate-900">
-            <span className="grid h-9 w-9 place-items-center rounded-lg bg-teal-50 text-teal-700">
-              <FileSpreadsheet className="h-5 w-5" />
-            </span>
-            <h2 className="text-base font-semibold">Carga de archivos</h2>
+    <section className="space-y-5">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase text-teal-700">Carga de archivos</div>
+            <h2 className="mt-1 text-xl font-semibold tracking-normal text-slate-950">
+              Prepara el procesamiento de asistencia
+            </h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
+              Sube el Excel principal y, si aplica, los libros auxiliares para horarios, nómina y eventualidades.
+            </p>
           </div>
-          <p className="mt-1 text-sm text-slate-600">
-            Sube asistencia y los libros auxiliares para confirmar horarios, nómina y eventualidades.
-          </p>
+        </div>
+
+        <div className="mt-5">
+          <UploadDropzone file={primaryFile} disabled={disabled} onFile={onPrimaryFile} />
         </div>
       </div>
 
-      <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <label className="group relative flex min-h-40 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-teal-300 bg-teal-50/70 px-4 py-6 text-center shadow-sm transition hover:border-teal-500 hover:bg-teal-50">
-          <span className="absolute inset-x-0 top-0 h-1 bg-teal-600" />
-          <span className="grid h-12 w-12 place-items-center rounded-lg bg-white text-teal-700 shadow-sm ring-1 ring-teal-100 transition group-hover:-translate-y-0.5">
-            <Upload className="h-7 w-7" />
-          </span>
-          <span className="mt-3 text-sm font-semibold text-slate-900">Excel principal</span>
-          <span className="mt-1 max-w-md text-xs text-slate-600">
-            {primaryFile ? primaryFile.name : 'Selecciona un archivo .xlsx, .xls o .csv'}
-          </span>
-          <input
-            className="sr-only"
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            disabled={disabled}
-            onChange={(event) => onPrimaryFile(event.target.files?.[0])}
-          />
-        </label>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <FileTypeCard
+          icon={FileSpreadsheet}
+          title="Excel principal"
+          required
+          tone="teal"
+          description="Contiene marcas, fechas, entrada, salida y observaciones."
+          selectedText={primaryFile?.name}
+          disabled={disabled}
+          onChange={(event) => onPrimaryFile(event.target.files?.[0])}
+        />
+        <FileTypeCard
+          icon={Files}
+          title="Horario extendido"
+          tone="blue"
+          description="Cruza por CODIGO y puede elegir la hoja del mes evaluado."
+          selectedText={secondaryFiles.length ? `${secondaryFiles.length} archivo(s) seleccionado(s)` : ''}
+          multiple
+          disabled={disabled}
+          onChange={(event) => onSecondaryFiles(Array.from(event.target.files ?? []))}
+        />
+        <FileTypeCard
+          icon={ShieldCheck}
+          title="Nómina"
+          tone="amber"
+          description="Aporta cargo, ubicación, fecha de ingreso y exclusiones."
+          selectedText={payrollFile?.name}
+          disabled={disabled}
+          onChange={(event) => onPayrollFile(event.target.files?.[0] ?? null)}
+        />
+        <FileTypeCard
+          icon={ClipboardCheck}
+          title="Eventualidades"
+          tone="violet"
+          description="Confirma permisos, licencias, tardanzas y otras eventualidades."
+          selectedText={eventualitiesFile?.name}
+          disabled={disabled}
+          onChange={(event) => onEventualitiesFile(event.target.files?.[0] ?? null)}
+        />
+      </div>
 
-        <label className="group relative flex min-h-40 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-sky-300 bg-sky-50/50 px-4 py-6 text-center shadow-sm transition hover:border-sky-500 hover:bg-sky-50">
-          <span className="absolute inset-x-0 top-0 h-1 bg-sky-600" />
-          <span className="grid h-12 w-12 place-items-center rounded-lg bg-white text-sky-700 shadow-sm ring-1 ring-sky-100 transition group-hover:-translate-y-0.5">
-            <Files className="h-7 w-7" />
-          </span>
-          <span className="mt-3 text-sm font-semibold text-slate-900">Excel horario extendido</span>
-          <span className="mt-1 max-w-sm text-xs text-slate-600">
-            {secondaryFiles.length
-              ? `${secondaryFiles.length} archivo(s) seleccionado(s)`
-              : 'Se cruza por CODIGO y, si hay varias hojas, se elige la hoja del mes evaluado'}
-          </span>
-          <input
-            className="sr-only"
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            multiple
-            disabled={disabled}
-            onChange={(event) => onSecondaryFiles(Array.from(event.target.files ?? []))}
-          />
-        </label>
-
-        <label className="group relative flex min-h-40 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-amber-300 bg-amber-50/70 px-4 py-6 text-center shadow-sm transition hover:border-amber-500 hover:bg-amber-50">
-          <span className="absolute inset-x-0 top-0 h-1 bg-amber-500" />
-          <span className="grid h-12 w-12 place-items-center rounded-lg bg-white text-amber-700 shadow-sm ring-1 ring-amber-100 transition group-hover:-translate-y-0.5">
-            <FileSpreadsheet className="h-7 w-7" />
-          </span>
-          <span className="mt-3 text-sm font-semibold text-slate-900">Excel nómina</span>
-          <span className="mt-1 max-w-sm text-xs text-slate-600">
-            {payrollFile
-              ? payrollFile.name
-              : 'Cruza por CODIGO: cargo, ubicación y fecha de ingreso'}
-          </span>
-          <input
-            className="sr-only"
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            disabled={disabled}
-            onChange={(event) => onPayrollFile(event.target.files?.[0] ?? null)}
-          />
-        </label>
-
-        <label className="group relative flex min-h-40 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-violet-300 bg-violet-50/60 px-4 py-6 text-center shadow-sm transition hover:border-violet-500 hover:bg-violet-50">
-          <span className="absolute inset-x-0 top-0 h-1 bg-violet-600" />
-          <span className="grid h-12 w-12 place-items-center rounded-lg bg-white text-violet-700 shadow-sm ring-1 ring-violet-100 transition group-hover:-translate-y-0.5">
-            <ClipboardCheck className="h-7 w-7" />
-          </span>
-          <span className="mt-3 text-sm font-semibold text-slate-900">Excel de eventualidades</span>
-          <span className="mt-1 max-w-sm text-xs text-slate-600">
-            {eventualitiesFile
-              ? eventualitiesFile.name
-              : 'Confirma por CODIGO, fecha y tipo; incluye permisos, tardanzas y demás casos'}
-          </span>
-          <input
-            className="sr-only"
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            disabled={disabled}
-            onChange={(event) => onEventualitiesFile(event.target.files?.[0] ?? null)}
-          />
-        </label>
+      <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <InfoPanel icon={FileSpreadsheet} title="Recomendaciones para carga exitosa" tone="blue">
+          <ul className="grid gap-1 sm:grid-cols-3">
+            <li>Usar .xlsx, .xls o .csv.</li>
+            <li>Verificar códigos y fechas.</li>
+            <li>Evitar celdas combinadas y encabezados vacíos.</li>
+          </ul>
+        </InfoPanel>
+        <InfoPanel icon={LockKeyhole} title="Privacidad y seguridad" tone="teal">
+          Los archivos se procesan localmente en el navegador y el cálculo pesado corre en Web Worker.
+        </InfoPanel>
       </div>
     </section>
   );
