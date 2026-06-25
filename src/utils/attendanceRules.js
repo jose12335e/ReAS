@@ -393,14 +393,16 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
   const exitMinutes = parseClockToMinutes(asValue(rawRow, mapping, 'salida'));
   const observation = classifyObservation(asValue(rawRow, mapping, 'observaciones'));
   const externalPrimaryType = externalEventualities.find((event) => event.tipo)?.tipo ?? '';
-  const hasExternalConfirmation = externalTypes.size > 0;
+  const hasVacationObservation = observation.matches.some((match) => match.id === 'vacacion');
+  const externalTypesForClassification = hasVacationObservation ? new Set() : externalTypes;
+  const hasExternalConfirmation = externalTypesForClassification.size > 0;
   const hasObservation = observation.isJustified || hasExternalConfirmation;
   const primaryId = externalPrimaryType || observation.primary?.id;
   const hasVerViatico =
-    externalTypes.has(EVENTUALITY_TYPES.TRAVEL) ||
+    externalTypesForClassification.has(EVENTUALITY_TYPES.TRAVEL) ||
     observation.matches.some((match) => match.id === 'ver-viatico');
   const isHoliday =
-    externalTypes.has(EVENTUALITY_TYPES.HOLIDAY) ||
+    externalTypesForClassification.has(EVENTUALITY_TYPES.HOLIDAY) ||
     observation.matches.some((match) => match.id === 'feriado');
   const expectedMinutes = expectedWindow.expectedMinutes;
   const absenceEquivalentMinutes = getAbsenceEquivalentMinutes(scheduleType, expectedMinutes);
@@ -423,24 +425,24 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
   const lateMinutes = isLate ? entryMinutes - entryExpected : 0;
   const isEarlyExit = !hasVerViatico && hasValidPunchPair && exitExpected !== null && exitMinutes < exitExpected;
   const earlyExitMinutes = isEarlyExit ? exitExpected - exitMinutes : 0;
-  const externalIsAuthoritative = externalTypes.size > 0;
-  const isVacation = externalIsAuthoritative
-    ? externalTypes.has(EVENTUALITY_TYPES.VACATION)
-    : primaryId === 'vacacion';
-  const isLicense = externalIsAuthoritative
-    ? externalTypes.has(EVENTUALITY_TYPES.LICENSE)
-    : primaryId === 'licencia';
-  const isPermit = externalIsAuthoritative
-    ? externalTypes.has(EVENTUALITY_TYPES.PERMIT)
-    : primaryId === 'permiso';
-  const isObservedAbsence = externalIsAuthoritative
-    ? externalTypes.has(EVENTUALITY_TYPES.ABSENCE)
-    : primaryId === 'ausencia';
+  const externalIsAuthoritative = externalTypesForClassification.size > 0;
+  const isVacation = hasVacationObservation || (externalIsAuthoritative
+    ? externalTypesForClassification.has(EVENTUALITY_TYPES.VACATION)
+    : primaryId === 'vacacion');
+  const isLicense = !isVacation && (externalIsAuthoritative
+    ? externalTypesForClassification.has(EVENTUALITY_TYPES.LICENSE)
+    : primaryId === 'licencia');
+  const isPermit = !isVacation && (externalIsAuthoritative
+    ? externalTypesForClassification.has(EVENTUALITY_TYPES.PERMIT)
+    : primaryId === 'permiso');
+  const isObservedAbsence = !isVacation && (externalIsAuthoritative
+    ? externalTypesForClassification.has(EVENTUALITY_TYPES.ABSENCE)
+    : primaryId === 'ausencia');
   const overridesIrregularPunch = hasVerViatico || isLicense || isPermit || isObservedAbsence;
   const hasTardinessObservation =
-    externalTypes.has(EVENTUALITY_TYPES.TARDINESS) ||
+    externalTypesForClassification.has(EVENTUALITY_TYPES.TARDINESS) ||
     observation.matches.some((match) => match.id === 'tardanza');
-  const hasEarlyExitConfirmation = externalTypes.has(EVENTUALITY_TYPES.EARLY_EXIT);
+  const hasEarlyExitConfirmation = externalTypesForClassification.has(EVENTUALITY_TYPES.EARLY_EXIT);
   const externalPermit = externalEventualities.find(
     (event) => event.tipo === EVENTUALITY_TYPES.PERMIT,
   );
@@ -457,9 +459,9 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
     : 0;
   const hasAbsenceJustification =
     observation.isJustified ||
-    externalTypes.has(EVENTUALITY_TYPES.ABSENCE) ||
-    externalTypes.has(EVENTUALITY_TYPES.PERMIT) ||
-    externalTypes.has(EVENTUALITY_TYPES.LICENSE);
+    externalTypesForClassification.has(EVENTUALITY_TYPES.ABSENCE) ||
+    externalTypesForClassification.has(EVENTUALITY_TYPES.PERMIT) ||
+    externalTypesForClassification.has(EVENTUALITY_TYPES.LICENSE);
 
   const metrics = createEmptyMetrics();
   const states = [];

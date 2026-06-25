@@ -634,7 +634,8 @@ export function buildEventualityReconciliation(eventualities, processedRows = []
 
   keys.forEach((key) => {
     const attendance = attendanceByKey.get(key);
-    const externalRecords = externalByKey.get(key) ?? [];
+    const attendanceIsVacation = /vacaci[oó]n/i.test(attendance?.finalState ?? '');
+    const externalRecords = attendanceIsVacation ? [] : externalByKey.get(key) ?? [];
     const attendanceTypes = (attendance?.types ?? []).filter(
       (type) => !NON_AUDIT_EVENTUALITY_TYPES.has(type),
     );

@@ -38,7 +38,10 @@ function durationFromHours(value) {
 function defaultAdjustmentTime(employee, detail) {
   const detailDifference = Number(detail?.diferenciaMin || 0);
   const employeeDifference = Number(employee?.diferenciaMin || 0);
-  return formatMinutes(Math.abs(detailDifference || employeeDifference));
+  const explainedDetailMinutes =
+    parseDurationToMinutes(detail?.tiempoJustificado) +
+    parseDurationToMinutes(detail?.tiempoNoJustificado);
+  return formatMinutes(Math.abs(detailDifference || explainedDetailMinutes || employeeDifference));
 }
 
 function detailKey(employee, detail) {
