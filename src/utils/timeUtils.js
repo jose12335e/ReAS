@@ -80,20 +80,21 @@ export function parseTimeToMinutes(value) {
     .replace('a m', 'am')
     .replace('p m', 'pm');
 
-  const match = normalized.match(/^(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?$/);
+  const match = normalized.match(/^(\d{1,2})(?::(\d{1,2}))?(?::(\d{1,2}))?\s*(am|pm)?$/);
   if (!match) return null;
 
   let hours = Number(match[1]);
   const minutes = Number(match[2] ?? 0);
-  const marker = match[3];
+  const seconds = Number(match[3] ?? 0);
+  const marker = match[4];
 
-  if (minutes > 59 || hours > 24) return null;
+  if (minutes > 59 || seconds > 59 || hours > 24) return null;
 
   if (marker === 'pm' && hours < 12) hours += 12;
   if (marker === 'am' && hours === 12) hours = 0;
   if (hours === 24) hours = 0;
 
-  return hours * 60 + minutes;
+  return hours * 60 + minutes + Math.round(seconds / 60);
 }
 
 export function parseClockToMinutes(value) {
