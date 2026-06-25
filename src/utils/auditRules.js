@@ -90,6 +90,15 @@ function buildDailyAuditDetail(row) {
   const differenceMin = expectedMin - explainedMin;
   const state = String(processedRowValue(row, 'Estado final') || '');
   const observation = String(processedRowValue(row, 'Observación original') || '');
+  const entryValue = processedRowValue(row, 'Hora entrada');
+  const exitValue = processedRowValue(row, 'Hora salida');
+  const hasAnyPunch = Boolean(entryValue || exitValue);
+  const permitWithoutTimeNeedsCapture =
+    /permiso/i.test(observation) &&
+    hasAnyPunch &&
+    !processedRowValue(row, 'Tiempo observaciones') &&
+    justifiedMin === 0 &&
+    unjustifiedMin === 0;
   const reviewHints = [];
 
   if (/vacaci[oó]n/i.test(observation) || /vacaci[oó]n/i.test(state)) {
@@ -108,7 +117,7 @@ function buildDailyAuditDetail(row) {
     reviewHints.push('Dia exigible sin horas reconocidas ni tiempo no trabajado registrado.');
     reviewHints.push('Día exigible sin horas reconocidas ni tiempo no trabajado.');
   }
-  if (/permiso/i.test(observation) && !processedRowValue(row, 'Tiempo observaciones')) {
+  if (permitWithoutTimeNeedsCapture) {
     reviewHints.push('Permiso sin tiempo de observacion; agrega horas si corresponde o dejalo como ausencia no justificada.');
     reviewHints.push('Permiso sin tiempo de observación registrado.');
   }
@@ -141,11 +150,7 @@ function buildDailyAuditDetail(row) {
     totalCalculado: formatMinutes(explainedMin),
     diferenciaMin: differenceMin,
     diferencia: formatMinutes(differenceMin),
-    requiereCapturaTiempo:
-      /permiso/i.test(observation) &&
-      !processedRowValue(row, 'Tiempo observaciones') &&
-      justifiedMin === 0 &&
-      unjustifiedMin === 0,
+    requiereCapturaTiempo: permitWithoutTimeNeedsCapture,
     estadoFinal: state || 'Sin estado',
     posibleFallo: reviewHints[0] ?? 'Revisar clasificación del día.',
     pistas: reviewHints,
