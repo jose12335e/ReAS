@@ -139,7 +139,9 @@ function EventualityReconciliation({ reconciliation, disabled, onDecision }) {
           <div className="mt-4 flex items-start gap-2 rounded-lg border border-violet-200 bg-white p-3 text-sm text-violet-950">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" />
             <span>
-              Esta bandeja solo muestra lo que necesita decision humana: -1, estados pendientes, tipos diferentes, datos incompletos o diferencias. Lo claro y automatico no se muestra aqui.
+              Esta bandeja solo muestra casos que necesitan decision humana: tiempos en -1, estados pendientes,
+              tipos diferentes, datos incompletos o diferencias entre asistencia y eventualidades. Lo que ya esta
+              claro se procesa automaticamente y no aparece aqui.
             </span>
           </div>
           {reconciliation.stats?.automaticProcessed ? (
@@ -472,7 +474,8 @@ function EmployeeAuditCard({ row, index, disabled, onAdjust, onAddIrregularPunch
               <div className="font-semibold">Posible causa</div>
               <p className="mt-1">{row.posibleCausa}</p>
               <p className="mt-2 text-xs">
-                Puedes resolver todo el descuadre del empleado o aplicar un ajuste por cada registro encontrado.
+                Revisa primero los registros listados abajo. Si el problema afecta a un solo dia, ajusta ese
+                registro; si afecta a todo el empleado, usa los botones generales.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -573,7 +576,8 @@ export default function AuditReviewPanel({
             <AuditBadge hasDiscrepancies={audit.hasDiscrepancies} />
           </div>
           <p className="mt-1 text-sm text-slate-600">
-            Revisa cada empleado y ajusta el tiempo directamente por registro cuando el Excel venga con errores.
+            Compara horas esperadas, reconocidas y tiempo explicado. Si algo no cuadra, el sistema muestra el
+            empleado y los dias que probablemente causan la diferencia.
           </p>
         </div>
         <div className="grid gap-2 text-sm sm:grid-cols-3 lg:min-w-[420px]">
@@ -601,8 +605,8 @@ export default function AuditReviewPanel({
           <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
-              Hay empleados con descuadre. Abre cada caso, revisa los registros detectados y aplica el tiempo correcto
-              antes de cerrar el reporte.
+              Hay empleados con descuadre. Abre cada caso y revisa si falta tiempo, sobra tiempo, hay permiso sin
+              horas, ponche irregular o una clasificacion que no corresponde.
             </span>
           </div>
           {pending.map((row, index) => (

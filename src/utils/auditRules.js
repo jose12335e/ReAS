@@ -92,19 +92,28 @@ function buildDailyAuditDetail(row) {
   const observation = String(processedRowValue(row, 'Observación original') || '');
   const reviewHints = [];
 
+  if (/vacaci[oó]n/i.test(observation) || /vacaci[oó]n/i.test(state)) {
+    reviewHints.push('Día marcado como vacaciones; no debe ajustarse como eventualidad justificada.');
+  }
+
   if (differenceMin > 0) {
+    reviewHints.push(`Faltan ${formatMinutes(differenceMin)} por clasificar para completar las horas esperadas del dia.`);
     reviewHints.push('Falta tiempo por clasificar en este día.');
   }
   if (differenceMin < 0) {
+    reviewHints.push(`El tiempo explicado excede por ${formatMinutes(Math.abs(differenceMin))} las horas esperadas del dia.`);
     reviewHints.push('El tiempo explicado excede las horas esperadas del día.');
   }
   if (expectedMin > 0 && recognizedMin === 0 && justifiedMin === 0 && unjustifiedMin === 0) {
+    reviewHints.push('Dia exigible sin horas reconocidas ni tiempo no trabajado registrado.');
     reviewHints.push('Día exigible sin horas reconocidas ni tiempo no trabajado.');
   }
   if (/permiso/i.test(observation) && !processedRowValue(row, 'Tiempo observaciones')) {
+    reviewHints.push('Permiso sin tiempo de observacion; agrega horas si corresponde o dejalo como ausencia no justificada.');
     reviewHints.push('Permiso sin tiempo de observación registrado.');
   }
   if (/ponche irregular|ponche incompleto/i.test(state)) {
+    reviewHints.push('Ponche pendiente de revision; confirma si debe ser ponchado irregular o si existe una eventualidad.');
     reviewHints.push('Ponche pendiente de revisión.');
   }
   if (/tardanza no justificada/i.test(state)) {

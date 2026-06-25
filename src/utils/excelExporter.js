@@ -1351,8 +1351,8 @@ function addEventualitiesSheet(workbook, config, reportOptions = {}) {
         rowNumber += 1;
         pagination.addRows(1);
       }
-      const justifiedCount = employee.eventualidadesJustificadas;
       const justifiedTime = parseDuration(employee.tiempoEventualidadJustificada);
+      const justifiedCount = justifiedTime > 0 ? employee.eventualidadesJustificadas : 0;
       const nonJustifiedEventTime = nonJustifiedEventMinutes(employee);
       const generalAccumulatedTime = justifiedTime + nonJustifiedEventTime;
       totals.justifiedCount += Number(justifiedCount || 0);

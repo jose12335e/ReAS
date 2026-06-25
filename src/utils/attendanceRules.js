@@ -504,10 +504,14 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
 
     if (isPermit) {
       metrics.permisos = 1;
-      metrics.eventualidadesJustificadas = 1;
-      metrics.tiempoEventualidadJustificadaMin += permitMinutes;
-      metrics.tiempoNoTrabajadoJustificadoMin += permitMinutes;
-      states.push('Permiso justificado');
+      if (permitMinutes > 0) {
+        metrics.eventualidadesJustificadas = 1;
+        metrics.tiempoEventualidadJustificadaMin += permitMinutes;
+        metrics.tiempoNoTrabajadoJustificadoMin += permitMinutes;
+        states.push('Permiso justificado');
+      } else {
+        states.push('Permiso registrado sin tiempo');
+      }
     }
 
     if (isObservedAbsence && isWorkday) {
