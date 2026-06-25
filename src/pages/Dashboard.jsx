@@ -804,7 +804,7 @@ export default function Dashboard({ activeUser, onLogout }) {
   };
   const currentPage = pageMeta[activeTab] ?? pageMeta.dashboard;
   const headerActions = (
-    <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:grid-cols-2 xl:w-[640px]">
+    <div className="grid w-full gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:grid-cols-2">
       <label className="grid gap-1.5">
         <span className="text-xs font-semibold uppercase text-slate-500">Horario base</span>
         <select

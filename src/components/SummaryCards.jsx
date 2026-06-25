@@ -171,8 +171,16 @@ export default function SummaryCards({ result }) {
     parseDurationToMinutes(summary.tiempoTardanzaNoJustificada) +
     parseDurationToMinutes(summary.tiempoSalidaTempranaNoJustificada) +
     parseDurationToMinutes(summary.tiempoAusenciaNoJustificada);
+  const eventualidadesJustificadasCount = (result.summaryByEmployee ?? []).reduce(
+    (total, employee) => total + Number(employee.eventualidadesJustificadas || 0),
+    0,
+  );
+  const tiempoEventualidadesJustificadasMin = (result.summaryByEmployee ?? []).reduce((total, employee) => {
+    if (Number(employee.eventualidadesJustificadas || 0) <= 0) return total;
+    return total + parseDurationToMinutes(employee.tiempoEventualidadJustificada);
+  }, 0);
   const tiempoGeneralEventualidadesMin =
-    parseDurationToMinutes(summary.tiempoEventualidadJustificada) + tiempoEventualidadesNoJustificadasMin;
+    tiempoEventualidadesJustificadasMin + tiempoEventualidadesNoJustificadasMin;
   const locationChart = result.summaryByLocation.slice(0, 8).map((row) => ({
     ubicacion: row.ubicacion,
     Ausencias: row.ausenciasJustificadas + row.ausenciasNoJustificadas,
@@ -236,8 +244,8 @@ export default function SummaryCards({ result }) {
       id: 'justificadas',
       title: 'Eventualidades justificadas registradas',
       lines: [
-        { label: 'Eventualidades justificadas', value: formatNumber(summary.eventualidadesJustificadas) },
-        { label: 'Tiempo acumulado', value: durationToDisplay(summary.tiempoEventualidadJustificada) },
+        { label: 'Eventualidades justificadas', value: formatNumber(eventualidadesJustificadasCount) },
+        { label: 'Tiempo acumulado', value: minutesToDuration(tiempoEventualidadesJustificadasMin) },
       ],
     },
     {
