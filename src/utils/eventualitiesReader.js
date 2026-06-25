@@ -312,7 +312,8 @@ export function parseEventualitiesWorkbook(arrayBuffer, fileName, evaluationMont
 
       const positiveHours = cantidadHoras > 0 ? cantidadHoras : 0;
       const positiveDays = cantidadDias > 0 ? cantidadDias : 0;
-      const pendingTime = cantidadDias === -1 || cantidadHoras === -1;
+      const pendingTime =
+        tipo !== EVENTUALITY_TYPES.LICENSE && (cantidadDias === -1 || cantidadHoras === -1);
 
       fechas.filter((fecha) => belongsToMonth(fecha, evaluationMonth)).forEach((fecha, dayIndex) => {
         records.push({
