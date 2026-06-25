@@ -894,7 +894,7 @@ export default function Dashboard({ activeUser, onLogout }) {
           onTabChange={setActiveTab}
           onLogout={onLogout}
         />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 lg:pl-72">
           <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
         <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm shadow-slate-200/70 lg:hidden">
           <div className="flex items-center justify-between gap-3">

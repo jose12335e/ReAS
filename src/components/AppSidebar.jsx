@@ -8,7 +8,7 @@ export default function AppSidebar({
   onLogout,
 }) {
   return (
-    <aside className="hidden min-h-screen w-72 shrink-0 border-r border-slate-200 bg-white px-4 py-5 shadow-sm shadow-slate-200/70 lg:sticky lg:top-0 lg:flex lg:flex-col">
+    <aside className="hidden border-r border-slate-200 bg-white px-4 py-5 shadow-sm shadow-slate-200/70 lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:flex lg:h-screen lg:w-72 lg:flex-col lg:overflow-y-auto">
       <div className="flex items-center gap-3 px-2">
         <span className="grid h-11 w-11 place-items-center rounded-2xl bg-teal-700 text-white shadow-sm">
           <ShieldCheck className="h-6 w-6" />
