@@ -376,6 +376,7 @@ function DetailCard({
               adjustmentMinutes,
               differenceMin,
               scopeLabel,
+              detail,
             })
           }
         >
@@ -389,6 +390,7 @@ function DetailCard({
               adjustmentMinutes,
               differenceMin,
               scopeLabel,
+              detail,
             })
           }
         >

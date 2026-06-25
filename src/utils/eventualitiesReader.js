@@ -331,7 +331,7 @@ export function parseEventualitiesWorkbook(arrayBuffer, fileName, evaluationMont
           cantidadDias,
           cantidadHoras,
           exactMinutes: positiveHours ? Math.round(positiveHours * 60) : null,
-          fullDayCount: positiveDays || null,
+          fullDayCount: positiveDays ? 1 : null,
           pendingTime,
           estado: status.key,
           estadoOriginal: status.label,
@@ -416,7 +416,10 @@ function buildReconciliationItem({
   };
 
   const externalSuggestedMinutes =
-    externalRecord?.exactMinutes ?? (externalRecord?.fullDayCount ? 8 * 60 : null);
+    externalRecord?.exactMinutes ??
+    (externalRecord?.fullDayCount
+      ? (attendance?.expectedMinutes || 8 * 60) * externalRecord.fullDayCount
+      : null);
   const eventType = externalRecord?.tipo || attendanceTypes[0] || '';
   const eventTime = attendance?.eventTimes?.[eventType] ?? {};
   const attendanceSuggestedMinutes =

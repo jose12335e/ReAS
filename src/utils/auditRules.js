@@ -392,6 +392,39 @@ function increment(value, amount = 1) {
   return cleanNumber(value) + amount;
 }
 
+function appendAuditText(value, label) {
+  return [value, label].filter(Boolean).join('; ');
+}
+
+function rowMatchesEmployee(row, employee) {
+  if (!employee) return false;
+  if (String(row.CODIGO ?? row.codigo) !== String(employee.codigo)) return false;
+  if (!employee.ubicacion) return true;
+  return String(row.UBICACION ?? row.ubicacion) === String(employee.ubicacion);
+}
+
+function rowMatchesAuditDetail(row, employee, detail = null) {
+  if (!rowMatchesEmployee(row, employee)) return false;
+  if (!detail) return true;
+  if (detail.fila && String(row['#']) === String(detail.fila)) return true;
+  return Boolean(detail.fecha && String(row.FECHA) === String(detail.fecha));
+}
+
+function processedTimeField(bucket) {
+  return bucket === 'justified'
+    ? 'Tiempo no trabajado justificado'
+    : 'Tiempo no trabajado no justificado';
+}
+
+function updateProcessedRowDuration(row, bucket, deltaMinutes) {
+  if (!['justified', 'unjustified'].includes(bucket) || !deltaMinutes) return row;
+  const field = processedTimeField(bucket);
+  return {
+    ...row,
+    [field]: updateDuration(row[field], deltaMinutes),
+  };
+}
+
 function employeeMatchesItem(employee, item) {
   if (String(employee.codigo) !== String(item.codigo)) return false;
   if (!item.ubicacion) return true;
@@ -502,8 +535,31 @@ function markEventualityDecision(
           (item.filaAsistencia && String(row['#']) === String(item.filaAsistencia)) ||
           (String(row.CODIGO) === String(item.codigo) && String(row.FECHA) === String(item.fecha));
         if (!matchesRow) return row;
+        const currentBucket = item.appliedDecision ?? item.clasificacionActual ?? 'none';
+        const targetBucket =
+          appliedBucket ??
+          (decision === 'confirm'
+            ? currentBucket
+            : decision === 'discard'
+              ? 'none'
+              : decision);
+        const currentMinutes = Math.max(
+          0,
+          Math.round(Number(item.appliedMinutes ?? item.tiempoClasificadoActualMin ?? 0)),
+        );
+        let adjustedRow = row;
+        if (decision !== 'confirm') {
+          if (['justified', 'unjustified'].includes(currentBucket) && currentMinutes > 0) {
+            const field = processedTimeField(currentBucket);
+            const removable = Math.min(currentMinutes, parseDurationToMinutes(adjustedRow[field]));
+            adjustedRow = updateProcessedRowDuration(adjustedRow, currentBucket, -removable);
+          }
+          if (['justified', 'unjustified'].includes(targetBucket) && minutes > 0) {
+            adjustedRow = updateProcessedRowDuration(adjustedRow, targetBucket, minutes);
+          }
+        }
         return {
-          ...row,
+          ...adjustedRow,
           'Decisión auditoría eventualidad': decisionLabels[decision] ?? decision,
           'Tiempo decidido en auditoría': formatMinutes(minutes),
           'Estado eventualidad externa': item.estadoEventualidadOriginal,
@@ -533,6 +589,7 @@ export function applyAuditAdjustment(result, employeeAudit, bucket, options = {}
       : Math.abs(Math.round(Number(options.adjustmentMinutes || 0)));
   if (!requestedMinutes) return result;
 
+  let adjustmentLabel = '';
   const summaryByEmployee = (result.summaryByEmployee ?? []).map((employee) => {
     if (
       String(employee.codigo) !== String(employeeAudit.codigo) ||
@@ -548,7 +605,7 @@ export function applyAuditAdjustment(result, employeeAudit, bucket, options = {}
     const currentMinutes = parseDurationToMinutes(employee[field]);
     const delta = difference > 0 ? requestedMinutes : -Math.min(requestedMinutes, currentMinutes);
     const scopeLabel = options.scopeLabel ? ` (${options.scopeLabel})` : '';
-    const adjustmentLabel =
+    adjustmentLabel =
       difference > 0
         ? `Ajuste de cuadre${scopeLabel}: +${formatMinutes(Math.abs(delta))} en ${
             bucket === 'justified' ? 'tiempo justificado' : 'tiempo no justificado'
@@ -565,10 +622,52 @@ export function applyAuditAdjustment(result, employeeAudit, bucket, options = {}
       ajusteCuadre: [employee.ajusteCuadre, adjustmentLabel].filter(Boolean).join('; '),
     };
   });
+  const detail = options.detail ?? null;
+  const processedRows = [...(result.processedRows ?? [])];
+
+  if (adjustmentLabel) {
+    if (difference > 0) {
+      const targetIndex = processedRows.findIndex((row) =>
+        detail
+          ? rowMatchesAuditDetail(row, employeeAudit, detail)
+          : rowMatchesEmployee(row, employeeAudit),
+      );
+      if (targetIndex >= 0) {
+        const row = updateProcessedRowDuration(processedRows[targetIndex], bucket, requestedMinutes);
+        processedRows[targetIndex] = {
+          ...row,
+          'Observación procesada': appendAuditText(row['Observación procesada'], adjustmentLabel),
+          'Estado final': appendAuditText(row['Estado final'], 'Cuadre revisado manualmente'),
+          'Ajuste auditoría': appendAuditText(row['Ajuste auditoría'], adjustmentLabel),
+        };
+      }
+    } else {
+      let remainingMinutes = requestedMinutes;
+      for (let index = 0; index < processedRows.length && remainingMinutes > 0; index += 1) {
+        const row = processedRows[index];
+        const matches = detail
+          ? rowMatchesAuditDetail(row, employeeAudit, detail)
+          : rowMatchesEmployee(row, employeeAudit);
+        if (!matches) continue;
+        const field = processedTimeField(bucket);
+        const removable = Math.min(remainingMinutes, parseDurationToMinutes(row[field]));
+        if (!removable) continue;
+        const updatedRow = updateProcessedRowDuration(row, bucket, -removable);
+        processedRows[index] = {
+          ...updatedRow,
+          'Observación procesada': appendAuditText(updatedRow['Observación procesada'], adjustmentLabel),
+          'Estado final': appendAuditText(updatedRow['Estado final'], 'Cuadre revisado manualmente'),
+          'Ajuste auditoría': appendAuditText(updatedRow['Ajuste auditoría'], adjustmentLabel),
+        };
+        remainingMinutes -= removable;
+      }
+    }
+  }
 
   return recalculateAuditAndSummaries({
     ...result,
     summaryByEmployee,
+    processedRows,
   }, { affectedEmployee: employeeAudit });
 }
 
@@ -676,6 +775,39 @@ export function applyManualIrregularPunch(result, employeeAudit, detail = {}) {
     return nextEmployee;
   });
 
+  const processedRows = (result.processedRows ?? []).map((row) => {
+    if (!rowMatchesAuditDetail(row, employeeAudit, detail)) return row;
+    return {
+      ...row,
+      'Horas esperadas': 0,
+      'Horas trabajadas reales': 0,
+      'Horas trabajadas reconocidas': 0,
+      'Tiempo tardanza': '00:00:00',
+      'Tiempo tardanza justificada': '00:00:00',
+      'Tiempo tardanza no justificada': '00:00:00',
+      'Tiempo salida temprana': '00:00:00',
+      'Tiempo salida temprana justificada': '00:00:00',
+      'Tiempo salida temprana no justificada': '00:00:00',
+      'Tiempo ausencia justificada': '00:00:00',
+      'Tiempo ausencia no justificada': '00:00:00',
+      'Tiempo no trabajado justificado': '00:00:00',
+      'Tiempo no trabajado no justificado': '00:00:00',
+      'Ver viatico': 0,
+      'Observación procesada': appendAuditText(row['Observación procesada'], adjustmentLabel),
+      'Estado final': appendAuditText(row['Estado final'], 'Ponche irregular agregado manualmente'),
+      'Ajuste auditoría': appendAuditText(row['Ajuste auditoría'], adjustmentLabel),
+    };
+  });
+
+  const events = Object.fromEntries(
+    Object.entries(result.events ?? {}).map(([key, rows]) => [
+      key,
+      Array.isArray(rows)
+        ? rows.filter((row) => !rowMatchesAuditDetail(row, employeeAudit, detail))
+        : rows,
+    ]),
+  );
+
   const poncheRow = {
     NOMBRE: employeeAudit.nombre,
     CODIGO: employeeAudit.codigo,
@@ -692,9 +824,10 @@ export function applyManualIrregularPunch(result, employeeAudit, detail = {}) {
   return recalculateAuditAndSummaries({
     ...result,
     summaryByEmployee,
+    processedRows,
     events: {
-      ...(result.events ?? {}),
-      ponchesIrregulares: [...(result.events?.ponchesIrregulares ?? []), poncheRow],
+      ...events,
+      ponchesIrregulares: [...(events.ponchesIrregulares ?? []), poncheRow],
     },
   }, { affectedEmployee: employeeAudit });
 }
@@ -744,7 +877,7 @@ function applyEventualityAuditDecisionCore(result, item, decision, options = {})
       item,
       decision,
       minutes,
-      options.automatic ? 'Confirmado automÃ¡ticamente sin cambios' : 'Confirmado sin cambios',
+      options.automatic ? 'Confirmado automáticamente sin cambios' : 'Confirmado sin cambios',
       item.appliedDecision ?? item.clasificacionActual ?? 'none',
       options,
     );
@@ -800,7 +933,7 @@ function applyEventualityAuditDecisionCore(result, item, decision, options = {})
     decision,
     minutes,
     options.automatic
-      ? `Clasificado automÃ¡ticamente como ${targetBucket === 'justified' ? 'justificado' : 'no justificado'}`
+      ? `Clasificado automáticamente como ${targetBucket === 'justified' ? 'justificado' : 'no justificado'}`
       : undefined,
     targetBucket,
     options,
@@ -908,13 +1041,13 @@ export function applyAutomaticEventualityDecisions(result) {
     if (!matches.length) return row;
     return {
       ...row,
-      'DecisiÃ³n auditorÃ­a eventualidad': matches
+      'Decisión auditoría eventualidad': matches
         .map((item) => item.decision === 'justified' ? 'Justificado' : item.decision === 'unjustified' ? 'No justificado' : 'Confirmado sin cambios')
         .join('; '),
-      'Tiempo decidido en auditorÃ­a': matches.map((item) => formatMinutes(item.appliedMinutes)).join('; '),
+      'Tiempo decidido en auditoría': matches.map((item) => formatMinutes(item.appliedMinutes)).join('; '),
       'Estado final': [
         row['Estado final'],
-        ...matches.map((item) => `AuditorÃ­a automÃ¡tica: ${item.resolution}`),
+        ...matches.map((item) => `Auditoría automática: ${item.resolution}`),
       ].filter(Boolean).join('; '),
     };
   });

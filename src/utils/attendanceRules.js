@@ -445,7 +445,7 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
     ? parseDurationToMinutes(asValue(rawRow, mapping, 'tiempoObservaciones'))
     : 0;
   const externalPermitMinutes = externalPermit?.exactMinutes ?? 0;
-  const externalPermitDayMinutes = externalPermit?.fullDayCount ? 8 * 60 : 0;
+  const externalPermitDayMinutes = externalPermit?.fullDayCount ? expectedMinutes : 0;
   const permitMinutes = isPermit
     ? externalPermitMinutes ||
       permitObservationMinutes ||
@@ -524,6 +524,8 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
         metrics.tiempoAusenciaNoJustificadaMin += uncoveredAbsenceMinutes;
         metrics.tiempoNoTrabajadoNoJustificadoMin += uncoveredAbsenceMinutes;
         states.push('Ausencia no justificada parcial');
+      } else if (isPermit) {
+        states.push('Ausencia cubierta por permiso');
       } else if (hasAbsenceJustification) {
         metrics.ausenciasJustificadas = 1;
         metrics.horasAusenciaMin += absenceEquivalentMinutes;
@@ -548,7 +550,9 @@ export function evaluateAttendanceRow(rawRow, mapping, options = {}) {
       states.push(`Ponche irregular reclasificado - ${observation.primary?.category ?? 'observacion'}`);
     } else if (hasValidPunchPair) {
       metrics.horasTrabajadasRealesMin = realWorkedMinutes;
-      metrics.horasTrabajadasReconocidasMin = Math.max(0, recognizedMinutes - permitMinutes);
+      metrics.horasTrabajadasReconocidasMin = isPermit
+        ? Math.min(recognizedMinutes, Math.max(0, expectedMinutes - permitMinutes))
+        : recognizedMinutes;
 
       if (realWorkedMinutes > 0) {
         metrics.diasTrabajadosCompletos = 1;
