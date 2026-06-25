@@ -500,7 +500,7 @@ function addEditableTextBox(workbook, worksheet, noteText, columnCount) {
   const noteCell = worksheet.getCell(noteStartRow, 1);
   noteCell.value =
     noteText ??
-    'Cuadro de texto editable. Escribe aqui la descripcion, nota o comentario de esta tabla.';
+    'Espacio descriptivo del reporte.';
   noteCell.font = { name: 'Aptos', size: 9 };
   noteCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
   noteCell.fill = {
@@ -1173,7 +1173,7 @@ function addHoursVsWorkedSheet(workbook, employees, reportOptions = {}) {
   const tableTitleRow = addEditableTextBox(
     workbook,
     worksheet,
-    'Cuadro de texto editable para explicar la relacion entre dias y horas a trabajar versus dias y horas trabajados.',
+    'El presente cuadro muestra la relacion entre los dias y horas asignados para laborar y el tiempo efectivamente trabajado por cada empleado, considerando ausencias, tardanzas, salidas tempranas, licencias, permisos, vacaciones y demas eventualidades registradas durante el periodo evaluado.',
     8,
   );
   addTitleRow(
@@ -1439,6 +1439,8 @@ function addTemplateSheets(workbook, result, reportOptions = {}) {
       headers: ['Nombres y Apellidos', 'Eventualidad', 'Cantidad'],
       widths: [42, 22, 12],
       pagePreset: 'table1',
+      noteText:
+        'El presente listado muestra los dias de vacaciones registrados por cada colaborador/a durante el periodo evaluado. Estos dias no se consideran dentro de los dias y horas exigibles de trabajo, por lo que se descuentan de los calculos generales para evitar alteraciones en los indicadores de asistencia y cumplimiento laboral.',
       employees,
       filter: (employee) => employee.vacaciones > 0,
       eventuality: () => 'Vacaciones',
@@ -1455,6 +1457,8 @@ function addTemplateSheets(workbook, result, reportOptions = {}) {
       headers: ['Nombres y Apellidos', 'Modo dePonchado', 'Cantidad'],
       widths: [42, 28, 12],
       pagePreset: 'table2',
+      noteText:
+        'Los registros identificados como ponchados irregulares no se contabilizan directamente como dias trabajados ni como ausencias, con el proposito de evitar alteraciones en los calculos de dias y horas laborables. Estos casos se presentan de forma separada para fines de validacion y revision correspondiente.',
       employees,
       filter: (employee) => employee.ponchesIrregulares > 0,
       eventuality: () => 'Ponche irregular',
@@ -1493,7 +1497,7 @@ function addTemplateSheets(workbook, result, reportOptions = {}) {
       groupBy: organizationGroup,
       pagePreset: 'table8',
       noteText:
-        'La Tabla 8 consolida el registro de eventualidades justificadas y no justificadas del personal con horario extendido. Este cuadro es editable.',
+        'La Tabla 8 consolida el registro de eventualidades justificadas y no justificadas del personal con horario extendido.',
     },
     reportOptions,
   );
