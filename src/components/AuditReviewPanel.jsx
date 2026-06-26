@@ -10,6 +10,7 @@ import {
   MapPin,
   PencilLine,
   ShieldAlert,
+  Trash2,
   UserRound,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -75,6 +76,7 @@ function AdjustmentButton({ children, disabled, onClick, tone = 'teal' }) {
     teal: 'bg-teal-700 hover:bg-teal-800',
     navy: 'bg-slate-900 hover:bg-slate-800',
     amber: 'bg-amber-600 hover:bg-amber-700',
+    rose: 'bg-rose-700 hover:bg-rose-800',
   };
 
   return (
@@ -297,6 +299,7 @@ function DetailCard({
   onManualTimeChange,
   onApply,
   onAddIrregularPunch,
+  onExcludeDetail,
 }) {
   const differenceMin = Number(detail?.diferenciaMin || employee.diferenciaMin || 0);
   const isMissing = differenceMin > 0;
@@ -381,6 +384,16 @@ function DetailCard({
           </span>
         </AdjustmentButton>
         <AdjustmentButton
+          tone="rose"
+          disabled={disabled}
+          onClick={() => onExcludeDetail(employee, detail)}
+        >
+          <span className="inline-flex items-center gap-1">
+            <Trash2 className="h-3.5 w-3.5" />
+            Excluir del calculo
+          </span>
+        </AdjustmentButton>
+        <AdjustmentButton
           disabled={disabled || !adjustmentMinutes || !canApplyJustified}
           onClick={() =>
             onApply('justified', {
@@ -412,7 +425,7 @@ function DetailCard({
   );
 }
 
-function EmployeeAuditCard({ row, index, disabled, onAdjust, onAddIrregularPunch }) {
+function EmployeeAuditCard({ row, index, disabled, onAdjust, onAddIrregularPunch, onExcludeDetail }) {
   const [expanded, setExpanded] = useState(index === 0);
   const [manualTimes, setManualTimes] = useState({});
   const isMissing = row.diferenciaMin > 0;
@@ -527,6 +540,7 @@ function EmployeeAuditCard({ row, index, disabled, onAdjust, onAddIrregularPunch
                     onManualTimeChange={(value) => updateDetailTime(detail, value)}
                     onApply={(bucket, options) => onAdjust(row, bucket, options)}
                     onAddIrregularPunch={onAddIrregularPunch}
+                    onExcludeDetail={onExcludeDetail}
                   />
                 );
               })}
@@ -548,6 +562,7 @@ export default function AuditReviewPanel({
   actionFeedback,
   onAdjust,
   onAddIrregularPunch,
+  onExcludeDetail,
   onEventualityDecision,
 }) {
   const pending = useMemo(() => audit?.pendingEmployees ?? [], [audit]);
@@ -623,6 +638,7 @@ export default function AuditReviewPanel({
               disabled={disabled}
               onAdjust={onAdjust}
               onAddIrregularPunch={onAddIrregularPunch}
+              onExcludeDetail={onExcludeDetail}
             />
           ))}
         </div>

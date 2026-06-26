@@ -35,6 +35,7 @@ import { EVENTUALITY_FIELD_DEFINITIONS } from '../utils/eventualitiesReader.js';
 import { PAYROLL_FIELD_DEFINITIONS } from '../utils/payrollReader.js';
 import {
   applyAuditAdjustment,
+  excludeAuditDetailFromCalculation,
   applyEventualityAuditDecision,
   applyManualIrregularPunch,
 } from '../utils/auditRules.js';
@@ -674,6 +675,21 @@ export default function Dashboard({ activeUser, onLogout }) {
     );
   }
 
+  function handleExcludeAuditDetail(employeeAudit, detail) {
+    const scope = `fila ${detail?.fila || '-'} ${detail?.fecha || ''}`.trim();
+    const confirmed = window.confirm(
+      `Esta accion excluira ${scope} de todos los calculos del reporte. La fila quedara marcada como excluida para trazabilidad. Deseas continuar?`,
+    );
+    if (!confirmed) return;
+
+    executeAuditAction(
+      `exclude:${employeeAudit.codigo}:${detail?.fila ?? detail?.fecha ?? 'registro'}`,
+      'Excluyendo registro del calculo...',
+      'Registro excluido del calculo correctamente.',
+      (current) => excludeAuditDetailFromCalculation(current, employeeAudit, detail, 'Revision manual'),
+    );
+  }
+
   function handleEventualityDecision(item, decision, options) {
     const successMessages = {
       justified: 'Eventualidad pasada a justificado correctamente.',
@@ -1145,6 +1161,7 @@ export default function Dashboard({ activeUser, onLogout }) {
                 actionFeedback={auditFeedback}
                 onAdjust={handleAuditAdjustment}
                 onAddIrregularPunch={handleManualIrregularPunch}
+                onExcludeDetail={handleExcludeAuditDetail}
                 onEventualityDecision={handleEventualityDecision}
               />
             ) : null}

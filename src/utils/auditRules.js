@@ -83,17 +83,20 @@ function processedRowValue(row, field) {
 
 function buildDailyAuditDetail(row) {
   const expectedMin = hoursToMinutes(processedRowValue(row, 'Horas esperadas'));
+  const realWorkedMin = hoursToMinutes(processedRowValue(row, 'Horas trabajadas reales'));
   const recognizedMin = hoursToMinutes(processedRowValue(row, 'Horas trabajadas reconocidas'));
   const justifiedMin = parseDurationToMinutes(processedRowValue(row, 'Tiempo no trabajado justificado'));
   const unjustifiedMin = parseDurationToMinutes(processedRowValue(row, 'Tiempo no trabajado no justificado'));
   const explainedMin = recognizedMin + justifiedMin + unjustifiedMin;
   const differenceMin = expectedMin - explainedMin;
   const state = String(processedRowValue(row, 'Estado final') || '');
+  const isExcluded = /excluido manualmente|excluido del calculo|excluido del c[aÃ¡]lculo/i.test(state);
   const observation = String(processedRowValue(row, 'Observación original') || '');
   const entryValue = processedRowValue(row, 'Hora entrada');
   const exitValue = processedRowValue(row, 'Hora salida');
   const hasAnyPunch = Boolean(entryValue || exitValue);
   const permitWithoutTimeNeedsCapture =
+    !isExcluded &&
     /permiso/i.test(observation) &&
     hasAnyPunch &&
     !processedRowValue(row, 'Tiempo observaciones') &&
@@ -144,7 +147,10 @@ function buildDailyAuditDetail(row) {
     observacion: observation || 'vacía',
     tiempoObservaciones: processedRowValue(row, 'Tiempo observaciones') || 'vacío',
     horasEsperadas: formatMinutes(expectedMin),
+    horasTrabajadasReales: formatMinutes(realWorkedMin),
     horasReconocidas: formatMinutes(recognizedMin),
+    tiempoTardanza: processedRowValue(row, 'Tiempo tardanza'),
+    tiempoSalidaTemprana: processedRowValue(row, 'Tiempo salida temprana'),
     tiempoJustificado: processedRowValue(row, 'Tiempo no trabajado justificado'),
     tiempoNoJustificado: processedRowValue(row, 'Tiempo no trabajado no justificado'),
     totalCalculado: formatMinutes(explainedMin),
@@ -455,6 +461,40 @@ function updateProcessedRowDuration(row, bucket, deltaMinutes) {
   return {
     ...row,
     [field]: updateDuration(row[field], deltaMinutes),
+  };
+}
+
+function decrementIfMatch(value, pattern, state, amount = 1) {
+  return pattern.test(state) ? decrement(value, amount) : value;
+}
+
+function recalculateEmployeeAttendanceRate(employee) {
+  const expectedMin = hoursToMinutes(employee.horasEsperadas);
+  const recognizedMin = hoursToMinutes(employee.horasReconocidas ?? employee.horasTrabajadasReconocidas);
+  return expectedMin > 0 ? Number((Math.max(0, 1 - recognizedMin / expectedMin) * 100).toFixed(2)) : 0;
+}
+
+function zeroProcessedRowForExclusion(row, adjustmentLabel) {
+  return {
+    ...row,
+    'Horas esperadas': 0,
+    'Horas trabajadas reales': 0,
+    'Horas trabajadas reconocidas': 0,
+    'Tiempo tardanza': '00:00:00',
+    'Tiempo tardanza justificada': '00:00:00',
+    'Tiempo tardanza no justificada': '00:00:00',
+    'Tiempo salida temprana': '00:00:00',
+    'Tiempo salida temprana justificada': '00:00:00',
+    'Tiempo salida temprana no justificada': '00:00:00',
+    'Tiempo ausencia justificada': '00:00:00',
+    'Tiempo ausencia no justificada': '00:00:00',
+    'Tiempo no trabajado justificado': '00:00:00',
+    'Tiempo no trabajado no justificado': '00:00:00',
+    'Tasa ausentismo': 0,
+    'Ver viatico': 0,
+    ['Observaci\u00f3n procesada']: appendAuditText(row['Observaci\u00f3n procesada'], adjustmentLabel),
+    'Estado final': appendAuditText(row['Estado final'], 'Excluido manualmente del calculo'),
+    ['Ajuste auditor\u00eda']: appendAuditText(row['Ajuste auditor\u00eda'], adjustmentLabel),
   };
 }
 
@@ -897,6 +937,134 @@ export function applyManualIrregularPunch(result, employeeAudit, detail = {}) {
       ...events,
       ponchesIrregulares: [...(events.ponchesIrregulares ?? []), poncheRow],
     },
+  }, { affectedEmployee: employeeAudit });
+}
+
+export function excludeAuditDetailFromCalculation(result, employeeAudit, detail = {}, reason = 'Exclusion manual') {
+  if (!employeeAudit?.codigo || !detail) return result;
+
+  const expectedMin = Math.max(0, parseDurationToMinutes(detail.horasEsperadas));
+  const realWorkedMin = Math.max(0, parseDurationToMinutes(detail.horasTrabajadasReales ?? detail.horasReales));
+  const recognizedMin = Math.max(0, parseDurationToMinutes(detail.horasReconocidas));
+  const justifiedMin = Math.max(0, parseDurationToMinutes(detail.tiempoJustificado));
+  const unjustifiedMin = Math.max(0, parseDurationToMinutes(detail.tiempoNoJustificado));
+  const tardinessMin = Math.max(0, parseDurationToMinutes(detail.tiempoTardanza));
+  const earlyExitMin = Math.max(0, parseDurationToMinutes(detail.tiempoSalidaTemprana));
+  const state = String(detail.estadoFinal || '');
+  const scopeLabel = `fila ${detail.fila || '-'} ${detail.fecha || ''}`.trim();
+  const adjustmentLabel = `Excluido del calculo (${scopeLabel}${reason ? ` - ${reason}` : ''})`;
+  const isLaborableRow =
+    expectedMin > 0 ||
+    /vacaci[oÃ³]n|licencia|permiso|ausencia|tardanza|salida|dia trabajado|ponche|viatico|vi[aÃ¡]tico/i.test(state);
+
+  const summaryByEmployee = (result.summaryByEmployee ?? []).map((employee) => {
+    if (
+      String(employee.codigo) !== String(employeeAudit.codigo) ||
+      String(employee.ubicacion) !== String(employeeAudit.ubicacion)
+    ) {
+      return employee;
+    }
+
+    let nextEmployee = {
+      ...employee,
+      diasLaborables: isLaborableRow ? decrement(employee.diasLaborables) : employee.diasLaborables,
+      diasTrabajadosCompletos:
+        recognizedMin > 0 || /dia trabajado|trabajo externo|ver viatico|ver vi[aÃ¡]tico/i.test(state)
+          ? decrement(employee.diasTrabajadosCompletos)
+          : employee.diasTrabajadosCompletos,
+      vacaciones: decrementIfMatch(employee.vacaciones, /vacaci[oÃ³]n/i, state),
+      licencias: decrementIfMatch(employee.licencias, /licencia/i, state),
+      permisos: decrementIfMatch(employee.permisos, /permiso/i, state),
+      ponchesIrregulares: decrementIfMatch(employee.ponchesIrregulares, /ponche irregular|ponche incompleto/i, state),
+      verViatico: decrementIfMatch(employee.verViatico, /ver viatico|ver vi[aÃ¡]tico|trabajo externo/i, state),
+      horasEsperadas: subtractHours(employee.horasEsperadas, expectedMin),
+      horasTrabajadasReales: subtractHours(employee.horasTrabajadasReales, realWorkedMin),
+      horasReconocidas: subtractHours(employee.horasReconocidas ?? employee.horasTrabajadasReconocidas, recognizedMin),
+      horasTrabajadasReconocidas: subtractHours(
+        employee.horasTrabajadasReconocidas ?? employee.horasReconocidas,
+        recognizedMin,
+      ),
+      tiempoNoTrabajadoJustificado: subtractDuration(employee.tiempoNoTrabajadoJustificado, justifiedMin),
+      tiempoNoTrabajadoNoJustificado: subtractDuration(employee.tiempoNoTrabajadoNoJustificado, unjustifiedMin),
+      observacionProcesada: [employee.observacionProcesada, adjustmentLabel].filter(Boolean).join('; '),
+      estadoFinal: [employee.estadoFinal, 'Excluido manualmente del calculo'].filter(Boolean).join('; '),
+      ajusteCuadre: [employee.ajusteCuadre, adjustmentLabel].filter(Boolean).join('; '),
+    };
+
+    if (/tardanza justificada/i.test(state)) {
+      nextEmployee = updateSpecificClassification(nextEmployee, 'tardanza', 'justified', tardinessMin || justifiedMin, -1);
+    } else if (/tardanza no justificada/i.test(state)) {
+      nextEmployee = updateSpecificClassification(nextEmployee, 'tardanza', 'unjustified', tardinessMin || unjustifiedMin, -1);
+    }
+    if (tardinessMin > 0) {
+      nextEmployee.tiempoTardanza = subtractDuration(nextEmployee.tiempoTardanza, tardinessMin);
+    }
+
+    if (/salida temprana justificada/i.test(state)) {
+      nextEmployee = updateSpecificClassification(
+        nextEmployee,
+        'salida_temprana',
+        'justified',
+        earlyExitMin || justifiedMin,
+        -1,
+      );
+    } else if (/salida temprana no justificada/i.test(state)) {
+      nextEmployee = updateSpecificClassification(
+        nextEmployee,
+        'salida_temprana',
+        'unjustified',
+        earlyExitMin || unjustifiedMin,
+        -1,
+      );
+    }
+    if (earlyExitMin > 0) {
+      nextEmployee.tiempoSalidaTemprana = subtractDuration(nextEmployee.tiempoSalidaTemprana, earlyExitMin);
+    }
+
+    if (/ausencia justificada/i.test(state)) {
+      nextEmployee = updateSpecificClassification(nextEmployee, 'ausencia', 'justified', justifiedMin, -1);
+    } else if (/ausencia no justificada/i.test(state)) {
+      nextEmployee = updateSpecificClassification(nextEmployee, 'ausencia', 'unjustified', unjustifiedMin, -1);
+    }
+
+    if (/permiso justificado|licencia justificada/i.test(state) && justifiedMin > 0) {
+      nextEmployee.eventualidadesJustificadas = decrement(nextEmployee.eventualidadesJustificadas);
+      nextEmployee.tiempoEventualidadJustificada = subtractDuration(
+        nextEmployee.tiempoEventualidadJustificada,
+        justifiedMin,
+      );
+    }
+
+    nextEmployee.diasATrabajar = Math.max(
+      0,
+      cleanNumber(nextEmployee.diasLaborables) -
+        cleanNumber(nextEmployee.vacaciones) -
+        cleanNumber(nextEmployee.ponchesIrregulares),
+    );
+    nextEmployee.tasaAusentismo = recalculateEmployeeAttendanceRate(nextEmployee);
+
+    return nextEmployee;
+  });
+
+  const processedRows = (result.processedRows ?? []).map((row) =>
+    rowMatchesAuditDetail(row, employeeAudit, detail)
+      ? zeroProcessedRowForExclusion(row, adjustmentLabel)
+      : row,
+  );
+  const events = Object.fromEntries(
+    Object.entries(result.events ?? {}).map(([key, rows]) => [
+      key,
+      Array.isArray(rows)
+        ? rows.filter((row) => !rowMatchesAuditDetail(row, employeeAudit, detail))
+        : rows,
+    ]),
+  );
+
+  return recalculateAuditAndSummaries({
+    ...result,
+    summaryByEmployee,
+    processedRows,
+    events,
   }, { affectedEmployee: employeeAudit });
 }
 
