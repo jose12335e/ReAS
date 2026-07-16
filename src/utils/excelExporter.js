@@ -999,6 +999,92 @@ function addSimpleListSheet(workbook, config, reportOptions = {}) {
   applyPageLayoutView(worksheet, 3, config.pagePreset ?? 'table1', reportOptions);
 }
 
+function addConsolidatedSimpleListSheet(workbook, config, monthlyResults = [], reportOptions = {}) {
+  const worksheet = workbook.addWorksheet(normalizeWorksheetName(config.sheetName));
+  setColumns(worksheet, config.widths);
+  const tableTitleRow = addEditableTextBox(workbook, worksheet, config.noteText, 3);
+  addTitleRow(worksheet, config.title, 3, tableTitleRow);
+  const headerRow = tableTitleRow + 1;
+  addSimpleListHeader(worksheet, headerRow, config.headers);
+
+  let rowNumber = headerRow + 1;
+  let hasRows = false;
+  const pagination = createContinuationManager({
+    worksheet,
+    title: config.title,
+    columnCount: 3,
+    rowLimit: PAGE_ROW_LIMITS[config.pagePreset] ?? PAGE_ROW_LIMITS.table1,
+    addContinuationHeader: (continuationHeaderRow) =>
+      addSimpleListHeader(worksheet, continuationHeaderRow, config.headers),
+  });
+
+  monthlyResults.forEach((monthResult) => {
+    const monthLabel = monthResult.metadata?.selectedMonth?.label ?? 'Mes no identificado';
+    const employees = monthResult.summaryByEmployee ?? [];
+    let monthQuantity = 0;
+    let monthHasRows = false;
+
+    rowNumber = pagination.beforeRows(rowNumber, 1);
+    addGroupRow(worksheet, rowNumber, monthLabel.toUpperCase(), 3);
+    rowNumber += 1;
+    pagination.addRows(1);
+
+    groupBy(employees, config.groupBy ?? organizationGroup).forEach(([groupName, groupEmployees]) => {
+      const filtered = sortEmployeesByPriority(
+        groupEmployees.filter(config.filter),
+        config.sortValue ?? config.quantity,
+      );
+      if (!filtered.length) return;
+      rowNumber = pagination.beforeRows(rowNumber, Math.min(2, filtered.length + 1));
+      addGroupRow(worksheet, rowNumber, groupName, 3);
+      rowNumber += 1;
+      pagination.addRows(1);
+
+      filtered.forEach((employee) => {
+        const nextRowNumber = pagination.beforeRows(rowNumber, 1);
+        if (nextRowNumber !== rowNumber) {
+          rowNumber = nextRowNumber;
+          addGroupRow(worksheet, rowNumber, `${monthLabel.toUpperCase()} - ${groupName}`, 3);
+          rowNumber += 1;
+          pagination.addRows(1);
+        }
+        const quantity = Number(config.quantity(employee) || 0);
+        worksheet.getCell(rowNumber, 1).value = collaboratorName(employee);
+        worksheet.getCell(rowNumber, 2).value = config.eventuality(employee);
+        worksheet.getCell(rowNumber, 3).value = quantity;
+        monthQuantity += quantity;
+        styleRowCells(worksheet, rowNumber, 1, 3, { horizontal: 'left' });
+        worksheet.getCell(rowNumber, 3).alignment = { vertical: 'middle', horizontal: 'center' };
+        rowNumber += 1;
+        pagination.addRows(1);
+        hasRows = true;
+        monthHasRows = true;
+      });
+    });
+
+    if (!monthHasRows) {
+      rowNumber = pagination.beforeRows(rowNumber, 1);
+      addNoDataRow(worksheet, rowNumber, 3);
+      rowNumber += 1;
+      pagination.addRows(1);
+    }
+
+    rowNumber = pagination.beforeRows(rowNumber, 1);
+    worksheet.getRow(rowNumber).values = [`SUBTOTAL ${monthLabel.toUpperCase()}`, '', monthQuantity];
+    styleTotalRow(worksheet, rowNumber, 3);
+    rowNumber += 1;
+    pagination.addRows(1);
+  });
+
+  if (!hasRows && !monthlyResults.length) {
+    rowNumber = pagination.beforeRows(rowNumber, 1);
+    addNoDataRow(worksheet, rowNumber, 3);
+  }
+
+  applyTemplateSheetDefaults(worksheet);
+  applyPageLayoutView(worksheet, 3, config.pagePreset ?? 'table1', reportOptions);
+}
+
 const DISCIPLINARY_REFERENCE_INTRO =
   'Para la evaluación de las tardanzas, salidas tempranas y ausencias, se tomó en cuenta lo establecido en el Manual de Inducción Institucional y en el Reglamento que Rige la Relación Laboral de Funcionarios y Empleados de la JCE. Con base en estos lineamientos, se elaboró una tabla de escalas (ver Tablas 3 a 5) que clasifica cada tipo de eventualidad según su gravedad y la sanción correspondiente. Esta estructura permite ofrecer una valoración visual, rápida y precisa del nivel de cumplimiento de cada colaborador/a durante el período evaluado.';
 
@@ -1306,6 +1392,151 @@ function addHoursVsWorkedSheet(workbook, employees, reportOptions = {}, options 
   applyPageLayoutView(worksheet, 8, 'table6', reportOptions);
 }
 
+function writeTable6EmployeeRow(worksheet, rowNumber, employee, totals) {
+  const dayRate = employee.diasATrabajar > 0 ? employee.diasTrabajadosCompletos / employee.diasATrabajar : 0;
+  const hourRate = employee.horasEsperadas > 0 ? employee.horasReconocidas / employee.horasEsperadas : 0;
+  totals.diasATrabajar += Number(employee.diasATrabajar || 0);
+  totals.diasTrabajados += Number(employee.diasTrabajadosCompletos || 0);
+  totals.horasEsperadas += Number(employee.horasEsperadas || 0);
+  totals.horasReconocidas += Number(employee.horasReconocidas || 0);
+
+  worksheet.getRow(rowNumber).values = [
+    collaboratorName(employee),
+    employee.diasATrabajar,
+    employee.diasTrabajadosCompletos,
+    dayRate,
+    hoursToExcelDuration(employee.horasEsperadas),
+    hoursToExcelDuration(employee.horasReconocidas),
+    hourRate,
+    employee.tasaAusentismo / 100,
+  ];
+  worksheet.getCell(rowNumber, 4).numFmt = '0%';
+  worksheet.getCell(rowNumber, 5).numFmt = TIME_FORMAT;
+  worksheet.getCell(rowNumber, 6).numFmt = TIME_FORMAT;
+  worksheet.getCell(rowNumber, 7).numFmt = '0%';
+  worksheet.getCell(rowNumber, 8).numFmt = '0%';
+  styleRowCells(worksheet, rowNumber, 1, 8, { horizontal: 'center' });
+  applyTable6BlockFills(worksheet, rowNumber);
+  worksheet.getCell(rowNumber, 1).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+}
+
+function writeTable6SubtotalRow(worksheet, rowNumber, label, totals) {
+  const totalDayRate =
+    totals.diasATrabajar > 0 ? totals.diasTrabajados / totals.diasATrabajar : 0;
+  const totalHourRate =
+    totals.horasEsperadas > 0 ? totals.horasReconocidas / totals.horasEsperadas : 0;
+  const totalAbsenceRate =
+    totals.horasEsperadas > 0 ? Math.max(0, 1 - totalHourRate) : 0;
+
+  worksheet.getRow(rowNumber).values = [
+    label,
+    totals.diasATrabajar,
+    totals.diasTrabajados,
+    totalDayRate,
+    hoursToExcelDuration(totals.horasEsperadas),
+    hoursToExcelDuration(totals.horasReconocidas),
+    totalHourRate,
+    totalAbsenceRate,
+  ];
+  [4, 7, 8].forEach((column) => {
+    worksheet.getCell(rowNumber, column).numFmt = '0%';
+  });
+  [5, 6].forEach((column) => {
+    worksheet.getCell(rowNumber, column).numFmt = TIME_FORMAT;
+  });
+  styleTotalRow(worksheet, rowNumber, 8);
+}
+
+function addConsolidatedHoursVsWorkedSheet(workbook, monthlyResults = [], reportOptions = {}) {
+  const title = 'Tabla 6. Relacion de horas y dias a trabajar vs horas y dias trabajados';
+  const worksheet = workbook.addWorksheet('Tabla 6 Horas y dias');
+  setColumns(worksheet, [32, 14, 14, 16, 16, 16, 17, 16]);
+  const tableTitleRow = addEditableTextBox(
+    workbook,
+    worksheet,
+    'El presente cuadro muestra la relacion entre los dias y horas asignados para laborar y el tiempo efectivamente trabajado por cada empleado, considerando ausencias, tardanzas, salidas tempranas, licencias, permisos, vacaciones y demas eventualidades registradas durante el periodo evaluado.',
+    8,
+  );
+  addTitleRow(worksheet, title, 8, tableTitleRow);
+  const headerRow = tableTitleRow + 1;
+  const headers = [
+    'Colaborador',
+    'Dias a trabajar',
+    'Dias trabajados',
+    '% de dias trabajados',
+    'Horas a trabajar',
+    'Horas trabajadas',
+    '% de horas trabajadas',
+    'Tasa de Ausentismo',
+  ];
+  addHoursVsWorkedHeader(worksheet, headerRow, headers);
+
+  let rowNumber = headerRow + 1;
+  const pagination = createContinuationManager({
+    worksheet,
+    title,
+    columnCount: 8,
+    rowLimit: PAGE_ROW_LIMITS.table6,
+    addContinuationHeader: (continuationHeaderRow) =>
+      addHoursVsWorkedHeader(worksheet, continuationHeaderRow, headers),
+  });
+
+  monthlyResults.forEach((monthResult) => {
+    const monthLabel = monthResult.metadata?.selectedMonth?.label ?? 'Mes no identificado';
+    const employees = monthResult.summaryByEmployee ?? [];
+    const totals = {
+      diasATrabajar: 0,
+      diasTrabajados: 0,
+      horasEsperadas: 0,
+      horasReconocidas: 0,
+    };
+    let monthHasRows = false;
+
+    rowNumber = pagination.beforeRows(rowNumber, 1);
+    addGroupRow(worksheet, rowNumber, monthLabel.toUpperCase(), 8);
+    rowNumber += 1;
+    pagination.addRows(1);
+
+    groupBy(employees, organizationGroup).forEach(([groupName, groupEmployees]) => {
+      const sortedEmployees = sortEmployeesByPriority(groupEmployees, table6Priority);
+      if (!sortedEmployees.length) return;
+      rowNumber = pagination.beforeRows(rowNumber, Math.min(2, sortedEmployees.length + 1));
+      addGroupRow(worksheet, rowNumber, groupName, 8);
+      rowNumber += 1;
+      pagination.addRows(1);
+
+      sortedEmployees.forEach((employee) => {
+        const nextRowNumber = pagination.beforeRows(rowNumber, 1);
+        if (nextRowNumber !== rowNumber) {
+          rowNumber = nextRowNumber;
+          addGroupRow(worksheet, rowNumber, `${monthLabel.toUpperCase()} - ${groupName}`, 8);
+          rowNumber += 1;
+          pagination.addRows(1);
+        }
+        writeTable6EmployeeRow(worksheet, rowNumber, employee, totals);
+        rowNumber += 1;
+        pagination.addRows(1);
+        monthHasRows = true;
+      });
+    });
+
+    if (!monthHasRows) {
+      rowNumber = pagination.beforeRows(rowNumber, 1);
+      addNoDataRow(worksheet, rowNumber, 8);
+      rowNumber += 1;
+      pagination.addRows(1);
+    }
+
+    rowNumber = pagination.beforeRows(rowNumber, 1);
+    writeTable6SubtotalRow(worksheet, rowNumber, `SUBTOTAL ${monthLabel.toUpperCase()}`, totals);
+    rowNumber += 1;
+    pagination.addRows(1);
+  });
+
+  applyTemplateSheetDefaults(worksheet);
+  applyPageLayoutView(worksheet, 8, 'table6', reportOptions);
+}
+
 function addEventualitiesSheet(workbook, config, reportOptions = {}) {
   const worksheet = workbook.addWorksheet(normalizeWorksheetName(config.sheetName));
   setColumns(worksheet, [34, 14, 15, 13, 14, 15, 14, 13, 14, 17, 17]);
@@ -1438,6 +1669,162 @@ function addEventualitiesSheet(workbook, config, reportOptions = {}) {
   applyPageLayoutView(worksheet, 11, config.pagePreset ?? 'table7', reportOptions);
 }
 
+function createEventualityTotals() {
+  return {
+    justifiedCount: 0,
+    justifiedTime: 0,
+    tardanzas: 0,
+    tardanzaTime: 0,
+    salidas: 0,
+    salidaTime: 0,
+    ausencias: 0,
+    ausenciaTime: 0,
+    totalTime: 0,
+    generalTime: 0,
+  };
+}
+
+function writeEventualityEmployeeRow(worksheet, rowNumber, employee, totals) {
+  const justifiedTime = parseDuration(employee.tiempoEventualidadJustificada);
+  const justifiedCount = justifiedTime > 0 ? employee.eventualidadesJustificadas : 0;
+  const nonJustifiedEventTime = nonJustifiedEventMinutes(employee);
+  const generalAccumulatedTime = justifiedTime + nonJustifiedEventTime;
+  totals.justifiedCount += Number(justifiedCount || 0);
+  totals.justifiedTime += justifiedTime;
+  totals.tardanzas += Number(employee.tardanzasNoJustificadas || 0);
+  totals.tardanzaTime += parseDuration(employee.tiempoTardanzaNoJustificada);
+  totals.salidas += Number(employee.salidasTempranasNoJustificadas || 0);
+  totals.salidaTime += parseDuration(employee.tiempoSalidaTempranaNoJustificada);
+  totals.ausencias += Number(employee.ausenciasNoJustificadas || 0);
+  totals.ausenciaTime += parseDuration(employee.tiempoAusenciaNoJustificada);
+  totals.totalTime += nonJustifiedEventTime;
+  totals.generalTime += generalAccumulatedTime;
+
+  worksheet.getRow(rowNumber).values = [
+    collaboratorName(employee),
+    justifiedCount,
+    minutesToExcelDuration(justifiedTime),
+    employee.tardanzasNoJustificadas,
+    durationStringToExcelDuration(employee.tiempoTardanzaNoJustificada),
+    employee.salidasTempranasNoJustificadas,
+    durationStringToExcelDuration(employee.tiempoSalidaTempranaNoJustificada),
+    employee.ausenciasNoJustificadas,
+    durationStringToExcelDuration(employee.tiempoAusenciaNoJustificada),
+    minutesToExcelDuration(nonJustifiedEventTime),
+    minutesToExcelDuration(generalAccumulatedTime),
+  ];
+  [3, 5, 7, 9, 10, 11].forEach((column) => {
+    worksheet.getCell(rowNumber, column).numFmt = TIME_FORMAT;
+  });
+  styleRowCells(worksheet, rowNumber, 1, 11, { horizontal: 'center' });
+  worksheet.getCell(rowNumber, 1).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+}
+
+function writeEventualitySubtotalRow(worksheet, rowNumber, label, totals) {
+  worksheet.getRow(rowNumber).values = [
+    label,
+    totals.justifiedCount,
+    minutesToExcelDuration(totals.justifiedTime),
+    totals.tardanzas,
+    minutesToExcelDuration(totals.tardanzaTime),
+    totals.salidas,
+    minutesToExcelDuration(totals.salidaTime),
+    totals.ausencias,
+    minutesToExcelDuration(totals.ausenciaTime),
+    minutesToExcelDuration(totals.totalTime),
+    minutesToExcelDuration(totals.generalTime),
+  ];
+  [3, 5, 7, 9, 10, 11].forEach((column) => {
+    worksheet.getCell(rowNumber, column).numFmt = TIME_FORMAT;
+  });
+  styleTotalRow(worksheet, rowNumber, 11);
+}
+
+function addConsolidatedEventualitiesSheet(workbook, config, monthlyResults = [], reportOptions = {}) {
+  const worksheet = workbook.addWorksheet(normalizeWorksheetName(config.sheetName));
+  setColumns(worksheet, [34, 14, 15, 13, 14, 15, 14, 13, 14, 17, 17]);
+  const tableTitleRow = addEditableTextBox(workbook, worksheet, config.noteText, 11);
+  addTitleRow(worksheet, config.title, 11, tableTitleRow);
+
+  const headerRow = tableTitleRow + 1;
+  const subHeaderRow = tableTitleRow + 2;
+  addEventualitiesHeaderRows(worksheet, headerRow, subHeaderRow);
+
+  let rowNumber = tableTitleRow + 3;
+  const disciplinaryRows = [];
+  const pagination = createContinuationManager({
+    worksheet,
+    title: config.title,
+    columnCount: 11,
+    rowLimit: PAGE_ROW_LIMITS[config.pagePreset] ?? PAGE_ROW_LIMITS.table7,
+    continuationHeaderRowCount: 2,
+    addContinuationHeader: (continuationHeaderRow) =>
+      addEventualitiesHeaderRows(worksheet, continuationHeaderRow, continuationHeaderRow + 1),
+  });
+
+  monthlyResults.forEach((monthResult) => {
+    const monthLabel = monthResult.metadata?.selectedMonth?.label ?? 'Mes no identificado';
+    const filteredEmployees = (monthResult.summaryByEmployee ?? []).filter(config.filter);
+    const totals = createEventualityTotals();
+    let monthHasRows = false;
+
+    rowNumber = pagination.beforeRows(rowNumber, 1);
+    addGroupRow(worksheet, rowNumber, monthLabel.toUpperCase(), 11);
+    rowNumber += 1;
+    pagination.addRows(1);
+
+    groupBy(filteredEmployees, config.groupBy ?? organizationGroup).forEach(([groupName, groupEmployees]) => {
+      const sortedEmployees = sortEmployeesByPriority(
+        groupEmployees,
+        config.sortValue ?? generalEventMinutes,
+      );
+      if (!sortedEmployees.length) return;
+      rowNumber = pagination.beforeRows(rowNumber, Math.min(2, sortedEmployees.length + 1));
+      addGroupRow(worksheet, rowNumber, groupName, 11);
+      rowNumber += 1;
+      pagination.addRows(1);
+
+      sortedEmployees.forEach((employee) => {
+        const nextRowNumber = pagination.beforeRows(rowNumber, 1);
+        if (nextRowNumber !== rowNumber) {
+          rowNumber = nextRowNumber;
+          addGroupRow(worksheet, rowNumber, `${monthLabel.toUpperCase()} - ${groupName}`, 11);
+          rowNumber += 1;
+          pagination.addRows(1);
+        }
+        writeEventualityEmployeeRow(worksheet, rowNumber, employee, totals);
+
+        if (config.applyFaultCategories) {
+          disciplinaryRows.push({
+            rowNumber,
+            categories: applyTable7FaultCategories(worksheet, rowNumber, employee),
+          });
+        }
+
+        rowNumber += 1;
+        pagination.addRows(1);
+        monthHasRows = true;
+      });
+    });
+
+    if (!monthHasRows) {
+      rowNumber = pagination.beforeRows(rowNumber, 1);
+      addNoDataRow(worksheet, rowNumber, 11);
+      rowNumber += 1;
+      pagination.addRows(1);
+    }
+
+    rowNumber = pagination.beforeRows(rowNumber, 1);
+    writeEventualitySubtotalRow(worksheet, rowNumber, `SUBTOTAL ${monthLabel.toUpperCase()}`, totals);
+    rowNumber += 1;
+    pagination.addRows(1);
+  });
+
+  if (config.applyFaultCategories) validateTable7FaultCoverage(worksheet, disciplinaryRows);
+  applyTemplateSheetDefaults(worksheet);
+  applyPageLayoutView(worksheet, 11, config.pagePreset ?? 'table7', reportOptions);
+}
+
 function monthSheetLabel(monthLabel = '') {
   return String(monthLabel)
     .normalize('NFD')
@@ -1527,6 +1914,80 @@ function addTemplateSheets(workbook, result, reportOptions = {}, options = {}) {
       noteText:
         'La Tabla 8 consolida el registro de eventualidades justificadas y no justificadas del personal con horario extendido.',
     },
+    reportOptions,
+  );
+}
+
+function addConsolidatedMonthlyTemplateSheets(workbook, monthlyResults = [], reportOptions = {}) {
+  const validMonthlyResults = monthlyResults.filter((monthResult) => monthResult?.summaryByEmployee);
+
+  addConsolidatedSimpleListSheet(
+    workbook,
+    {
+      sheetName: 'Tabla 1 Vacaciones',
+      title: 'Tabla 1. Listado de vacaciones por colaborador/a',
+      headers: ['Nombres y Apellidos', 'Eventualidad', 'Cantidad'],
+      widths: [42, 22, 12],
+      pagePreset: 'table1',
+      noteText:
+        'El presente listado muestra los dias de vacaciones registrados por cada colaborador/a durante el periodo evaluado. Estos dias no se consideran dentro de los dias y horas exigibles de trabajo, por lo que se descuentan de los calculos generales para evitar alteraciones en los indicadores de asistencia y cumplimiento laboral.',
+      filter: (employee) => employee.vacaciones > 0,
+      eventuality: () => 'Vacaciones',
+      quantity: (employee) => employee.vacaciones,
+    },
+    validMonthlyResults,
+    reportOptions,
+  );
+
+  addConsolidatedSimpleListSheet(
+    workbook,
+    {
+      sheetName: 'Tabla 2 Ponchado irregular',
+      title: 'Tabla 2. Listado de ponchado irregular por colaborador/a',
+      headers: ['Nombres y Apellidos', 'Modo dePonchado', 'Cantidad'],
+      widths: [42, 28, 12],
+      pagePreset: 'table2',
+      noteText:
+        'Los registros identificados como ponchados irregulares no se contabilizan directamente como dias trabajados ni como ausencias, con el proposito de evitar alteraciones en los calculos de dias y horas laborables. Estos casos se presentan de forma separada para fines de validacion y revision correspondiente.',
+      filter: (employee) => employee.ponchesIrregulares > 0,
+      eventuality: () => 'Ponche irregular',
+      quantity: (employee) => employee.ponchesIrregulares,
+    },
+    validMonthlyResults,
+    reportOptions,
+  );
+
+  addDisciplinaryReferenceSheet(workbook, reportOptions);
+  addConsolidatedHoursVsWorkedSheet(workbook, validMonthlyResults, reportOptions);
+
+  addConsolidatedEventualitiesSheet(
+    workbook,
+    {
+      sheetName: 'Tabla 7 Eventualidades',
+      title: 'Tabla 7. Eventualidades justificadas y no justificadas - Colaboradores/as',
+      filter: (employee) => !String(employee.tipoHorario).toLowerCase().includes('extendido'),
+      groupBy: organizationGroup,
+      pagePreset: 'table7',
+      applyFaultCategories: true,
+      noteText:
+        'La Tabla 7 consolida el registro de eventualidades justificadas (ausencias, permisos y licencias) y no justificadas (tardanzas, salidas anticipadas y ausencias). En el caso de las no justificadas, se incorpora una codificacion por colores que orienta sobre la posible medida disciplinaria conforme a la normativa vigente.\n\nNo obstante, su identificacion no implica la aplicacion automatica de sanciones, ya que corresponde al supervisor inmediato evaluar cada caso de manera individual y proceder segun los criterios establecidos en las Tablas 3, 4 y 5.',
+    },
+    validMonthlyResults,
+    reportOptions,
+  );
+
+  addConsolidatedEventualitiesSheet(
+    workbook,
+    {
+      sheetName: 'Tabla 8 Eventualidades HE',
+      title: 'Tabla 8. Eventualidades justificadas y no justificadas - Horario extendido',
+      filter: (employee) => String(employee.tipoHorario).toLowerCase().includes('extendido'),
+      groupBy: organizationGroup,
+      pagePreset: 'table8',
+      noteText:
+        'La Tabla 8 consolida el registro de eventualidades justificadas y no justificadas del personal con horario extendido.',
+    },
+    validMonthlyResults,
     reportOptions,
   );
 }
@@ -1811,10 +2272,12 @@ export async function exportAttendanceReport(result, reportOptions = {}) {
   workbook.modified = new Date();
 
   await addControlReportSheet(workbook, result, reportOptions);
+  const hasMonthlyResults = (result?.monthlyResults?.length ?? 0) > 1;
+  const isAllMonthsReport = result?.metadata?.monthSelectionMode === 'all' && hasMonthlyResults;
   const separatedMonthlyTables =
-    result?.metadata?.monthSelectionMode === 'all' &&
-    result?.metadata?.multiMonthReportMode === 'separated' &&
-    (result?.monthlyResults?.length ?? 0) > 1;
+    isAllMonthsReport && result?.metadata?.multiMonthReportMode === 'separated';
+  const consolidatedMonthlyTables =
+    isAllMonthsReport && result?.metadata?.multiMonthReportMode === 'consolidated';
 
   if (separatedMonthlyTables) {
     result.monthlyResults.forEach((monthResult, index) => {
@@ -1823,6 +2286,8 @@ export async function exportAttendanceReport(result, reportOptions = {}) {
         includeReferenceSheet: index === 0,
       });
     });
+  } else if (consolidatedMonthlyTables) {
+    addConsolidatedMonthlyTemplateSheets(workbook, result.monthlyResults, reportOptions);
   } else {
     addTemplateSheets(workbook, result, reportOptions);
   }
