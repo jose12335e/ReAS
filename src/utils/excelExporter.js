@@ -1009,6 +1009,7 @@ function addConsolidatedSimpleListSheet(workbook, config, monthlyResults = [], r
 
   let rowNumber = headerRow + 1;
   let hasRows = false;
+  let totalQuantity = 0;
   const pagination = createContinuationManager({
     worksheet,
     title: config.title,
@@ -1074,12 +1075,19 @@ function addConsolidatedSimpleListSheet(workbook, config, monthlyResults = [], r
     styleTotalRow(worksheet, rowNumber, 3);
     rowNumber += 1;
     pagination.addRows(1);
+    totalQuantity += monthQuantity;
   });
 
   if (!hasRows && !monthlyResults.length) {
     rowNumber = pagination.beforeRows(rowNumber, 1);
     addNoDataRow(worksheet, rowNumber, 3);
+    rowNumber += 1;
+    pagination.addRows(1);
   }
+
+  rowNumber = pagination.beforeRows(rowNumber, 1);
+  worksheet.getRow(rowNumber).values = ['TOTAL GENERAL', '', totalQuantity];
+  styleTotalRow(worksheet, rowNumber, 3);
 
   applyTemplateSheetDefaults(worksheet);
   applyPageLayoutView(worksheet, 3, config.pagePreset ?? 'table1', reportOptions);
@@ -1472,6 +1480,12 @@ function addConsolidatedHoursVsWorkedSheet(workbook, monthlyResults = [], report
   addHoursVsWorkedHeader(worksheet, headerRow, headers);
 
   let rowNumber = headerRow + 1;
+  const grandTotals = {
+    diasATrabajar: 0,
+    diasTrabajados: 0,
+    horasEsperadas: 0,
+    horasReconocidas: 0,
+  };
   const pagination = createContinuationManager({
     worksheet,
     title,
@@ -1531,7 +1545,14 @@ function addConsolidatedHoursVsWorkedSheet(workbook, monthlyResults = [], report
     writeTable6SubtotalRow(worksheet, rowNumber, `SUBTOTAL ${monthLabel.toUpperCase()}`, totals);
     rowNumber += 1;
     pagination.addRows(1);
+    grandTotals.diasATrabajar += totals.diasATrabajar;
+    grandTotals.diasTrabajados += totals.diasTrabajados;
+    grandTotals.horasEsperadas += totals.horasEsperadas;
+    grandTotals.horasReconocidas += totals.horasReconocidas;
   });
+
+  rowNumber = pagination.beforeRows(rowNumber, 1);
+  writeTable6SubtotalRow(worksheet, rowNumber, 'TOTAL GENERAL', grandTotals);
 
   applyTemplateSheetDefaults(worksheet);
   applyPageLayoutView(worksheet, 8, 'table6', reportOptions);
@@ -1740,6 +1761,12 @@ function writeEventualitySubtotalRow(worksheet, rowNumber, label, totals) {
   styleTotalRow(worksheet, rowNumber, 11);
 }
 
+function addEventualityTotals(target, source) {
+  Object.keys(target).forEach((key) => {
+    target[key] += Number(source[key] || 0);
+  });
+}
+
 function addConsolidatedEventualitiesSheet(workbook, config, monthlyResults = [], reportOptions = {}) {
   const worksheet = workbook.addWorksheet(normalizeWorksheetName(config.sheetName));
   setColumns(worksheet, [34, 14, 15, 13, 14, 15, 14, 13, 14, 17, 17]);
@@ -1752,6 +1779,7 @@ function addConsolidatedEventualitiesSheet(workbook, config, monthlyResults = []
 
   let rowNumber = tableTitleRow + 3;
   const disciplinaryRows = [];
+  const grandTotals = createEventualityTotals();
   const pagination = createContinuationManager({
     worksheet,
     title: config.title,
@@ -1818,7 +1846,11 @@ function addConsolidatedEventualitiesSheet(workbook, config, monthlyResults = []
     writeEventualitySubtotalRow(worksheet, rowNumber, `SUBTOTAL ${monthLabel.toUpperCase()}`, totals);
     rowNumber += 1;
     pagination.addRows(1);
+    addEventualityTotals(grandTotals, totals);
   });
+
+  rowNumber = pagination.beforeRows(rowNumber, 1);
+  writeEventualitySubtotalRow(worksheet, rowNumber, 'TOTAL GENERAL', grandTotals);
 
   if (config.applyFaultCategories) validateTable7FaultCoverage(worksheet, disciplinaryRows);
   applyTemplateSheetDefaults(worksheet);
