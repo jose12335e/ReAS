@@ -551,14 +551,20 @@ function cellTextForAutoFit(cell) {
   return '';
 }
 
+const AUTOFIT_FULL_ROW_LIMIT = 1200;
+const AUTOFIT_SAMPLE_ROW_LIMIT = 300;
+
 function autoFitWorksheetColumns(worksheet) {
   const columnCount = worksheet.columnCount;
+  const rowScanLimit =
+    worksheet.rowCount > AUTOFIT_FULL_ROW_LIMIT ? AUTOFIT_SAMPLE_ROW_LIMIT : worksheet.rowCount;
   for (let columnNumber = 1; columnNumber <= columnCount; columnNumber += 1) {
     const column = worksheet.getColumn(columnNumber);
     const currentWidth = Number(column.width || 10);
     let maxLength = 0;
 
     column.eachCell({ includeEmpty: false }, (cell) => {
+      if (cell.row > rowScanLimit) return;
       if (cell.isMerged) return;
       const cellText = cellTextForAutoFit(cell);
       const longestLine = cellText
@@ -573,7 +579,10 @@ function autoFitWorksheetColumns(worksheet) {
 }
 
 function autoFitWorksheetRows(worksheet) {
-  worksheet.eachRow((row) => {
+  const rowScanLimit =
+    worksheet.rowCount > AUTOFIT_FULL_ROW_LIMIT ? AUTOFIT_SAMPLE_ROW_LIMIT : worksheet.rowCount;
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber > rowScanLimit) return;
     let lineCount = 1;
     row.eachCell({ includeEmpty: false }, (cell) => {
       if (cell.isMerged) return;

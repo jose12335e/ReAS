@@ -10,6 +10,7 @@ import { parsePayrollWorkbook, previewPayrollWorkbook } from '../utils/payrollRe
 import { validateColumnMapping, validateWorkbookData } from '../utils/validationRules.js';
 import { applyAutomaticEventualityDecisions } from '../utils/auditRules.js';
 import {
+  buildEventualitiesIndex,
   buildEventualityReconciliation,
   parseEventualitiesWorkbook,
   previewEventualitiesWorkbook,
@@ -54,7 +55,59 @@ function monthOptionsForRows(rows, mapping) {
   return withAllMonthsOption(detectAvailableMonths(rows, mapping));
 }
 
-function processRowsForSelection(payload, rows, evaluationMonth) {
+function belongsToMonth(dateKey, evaluationMonth) {
+  if (!evaluationMonth || evaluationMonth.all || !dateKey) return true;
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+  return (
+    Number.isFinite(year) &&
+    Number.isFinite(month) &&
+    Number.isFinite(day) &&
+    year === Number(evaluationMonth.year) &&
+    month - 1 === Number(evaluationMonth.month)
+  );
+}
+
+function filterEventualitiesForMonth(eventualities, evaluationMonth) {
+  if (!eventualities?.enabled || !evaluationMonth || evaluationMonth.all) return eventualities;
+  const records = (eventualities.records ?? []).filter((record) =>
+    belongsToMonth(record.fecha, evaluationMonth),
+  );
+  return {
+    ...eventualities,
+    records,
+    recordsByCodeDate: buildEventualitiesIndex(records),
+    stats: {
+      ...(eventualities.stats ?? {}),
+      dailyRecords: records.length,
+      pendingTime: records.filter((record) => record.pendingTime).length,
+    },
+  };
+}
+
+function buildAuxiliaryCaches(payload, rows, evaluationMonth) {
+  const useSharedMonth = isAllMonthsSelection(evaluationMonth);
+  const monthForAuxiliaries = useSharedMonth ? null : evaluationMonth;
+  const payroll = parsePayrollWorkbook(
+    payload.payrollFile?.arrayBuffer,
+    payload.payrollFile?.name,
+    monthForAuxiliaries,
+    payload.payrollFile?.options,
+  );
+  const eventualities = parseEventualitiesWorkbook(
+    payload.eventualitiesFile?.arrayBuffer,
+    payload.eventualitiesFile?.name,
+    monthForAuxiliaries,
+    payload.eventualitiesFile?.options,
+  );
+
+  return {
+    payroll,
+    eventualities,
+    useSharedMonth,
+  };
+}
+
+function processRowsForSelection(payload, rows, evaluationMonth, caches = {}) {
   const monthForAuxiliaries = isAllMonthsSelection(evaluationMonth) ? null : evaluationMonth;
   const extendedSchedule = parseExtendedScheduleFiles(
     payload.extendedScheduleFiles ?? [],
@@ -62,17 +115,23 @@ function processRowsForSelection(payload, rows, evaluationMonth) {
     payload.mapping,
     monthForAuxiliaries,
   );
-  const payroll = parsePayrollWorkbook(
-    payload.payrollFile?.arrayBuffer,
-    payload.payrollFile?.name,
-    monthForAuxiliaries ?? extendedSchedule.evaluationMonth,
-    payload.payrollFile?.options,
-  );
-  const eventualities = parseEventualitiesWorkbook(
-    payload.eventualitiesFile?.arrayBuffer,
-    payload.eventualitiesFile?.name,
-    monthForAuxiliaries ?? extendedSchedule.evaluationMonth,
-    payload.eventualitiesFile?.options,
+  const payroll =
+    caches.payroll ??
+    parsePayrollWorkbook(
+      payload.payrollFile?.arrayBuffer,
+      payload.payrollFile?.name,
+      monthForAuxiliaries ?? extendedSchedule.evaluationMonth,
+      payload.payrollFile?.options,
+    );
+  const eventualities = filterEventualitiesForMonth(
+    caches.eventualities ??
+      parseEventualitiesWorkbook(
+        payload.eventualitiesFile?.arrayBuffer,
+        payload.eventualitiesFile?.name,
+        monthForAuxiliaries ?? extendedSchedule.evaluationMonth,
+        payload.eventualitiesFile?.options,
+      ),
+    evaluationMonth,
   );
   const processedResult = processAttendanceRows(rows, payload.mapping, {
     defaultScheduleType: payload.defaultScheduleType,
@@ -248,8 +307,10 @@ self.onmessage = async (event) => {
         return;
       }
 
-      post('progress', { value: 28, label: 'Procesando asistencia' });
-      const processed = processRowsForSelection(payload, rows, selectedMonth);
+      post('progress', { value: 28, label: 'Preparando cruces de nomina y eventualidades' });
+      const auxiliaryCaches = buildAuxiliaryCaches(payload, rows, selectedMonth);
+      post('progress', { value: 36, label: 'Procesando asistencia' });
+      const processed = processRowsForSelection(payload, rows, selectedMonth, auxiliaryCaches);
       const availableMonths = detectAvailableMonths(cachedRows, payload.mapping);
       let monthlyResults = [];
 
@@ -260,7 +321,7 @@ self.onmessage = async (event) => {
             label: `Procesando ${month.label}`,
           });
           const monthRows = filterRowsByEvaluationMonth(cachedRows, payload.mapping, month);
-          const monthProcessed = processRowsForSelection(payload, monthRows, month);
+          const monthProcessed = processRowsForSelection(payload, monthRows, month, auxiliaryCaches);
           return decorateResultMetadata({
             result: monthProcessed.result,
             payload,
