@@ -1167,8 +1167,9 @@ function addDisciplinaryReferenceSheet(workbook, reportOptions = {}) {
   applyPageLayoutView(worksheet, 3, 'table3', reportOptions);
 }
 
-function addHoursVsWorkedSheet(workbook, employees, reportOptions = {}) {
-  const worksheet = workbook.addWorksheet('Tabla 6 Horas y dias');
+function addHoursVsWorkedSheet(workbook, employees, reportOptions = {}, options = {}) {
+  const title = options.title ?? 'Tabla 6. Relacion de horas y dias a trabajar vs horas y dias trabajados';
+  const worksheet = workbook.addWorksheet(normalizeWorksheetName(options.sheetName ?? 'Tabla 6 Horas y dias'));
   setColumns(worksheet, [32, 14, 14, 16, 16, 16, 17, 16]);
   const tableTitleRow = addEditableTextBox(
     workbook,
@@ -1178,7 +1179,7 @@ function addHoursVsWorkedSheet(workbook, employees, reportOptions = {}) {
   );
   addTitleRow(
     worksheet,
-    'Tabla 6. Relacion de horas y dias a trabajar vs horas y dias trabajados',
+    title,
     8,
     tableTitleRow,
   );
@@ -1207,7 +1208,7 @@ function addHoursVsWorkedSheet(workbook, employees, reportOptions = {}) {
   };
   const pagination = createContinuationManager({
     worksheet,
-    title: 'Tabla 6. Relacion de horas y dias a trabajar vs horas y dias trabajados',
+    title,
     columnCount: 8,
     rowLimit: PAGE_ROW_LIMITS.table6,
     addContinuationHeader: (continuationHeaderRow) =>
@@ -1428,14 +1429,27 @@ function addEventualitiesSheet(workbook, config, reportOptions = {}) {
   applyPageLayoutView(worksheet, 11, config.pagePreset ?? 'table7', reportOptions);
 }
 
-function addTemplateSheets(workbook, result, reportOptions = {}) {
+function monthSheetLabel(monthLabel = '') {
+  return String(monthLabel)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 12);
+}
+
+function addTemplateSheets(workbook, result, reportOptions = {}, options = {}) {
   const employees = result.summaryByEmployee ?? [];
+  const monthLabel = options.monthLabel ?? '';
+  const titleSuffix = monthLabel ? ` - ${monthLabel}` : '';
+  const sheetSuffix = monthLabel ? ` ${monthSheetLabel(monthLabel)}` : '';
+  const useCompactSheetNames = Boolean(monthLabel);
 
   addSimpleListSheet(
     workbook,
     {
-      sheetName: 'Tabla 1 Vacaciones',
-      title: 'Tabla 1. Listado de vacaciones por colaborador/a',
+      sheetName: useCompactSheetNames ? `T1 Vacaciones${sheetSuffix}` : 'Tabla 1 Vacaciones',
+      title: `Tabla 1. Listado de vacaciones por colaborador/a${titleSuffix}`,
       headers: ['Nombres y Apellidos', 'Eventualidad', 'Cantidad'],
       widths: [42, 22, 12],
       pagePreset: 'table1',
@@ -1452,8 +1466,8 @@ function addTemplateSheets(workbook, result, reportOptions = {}) {
   addSimpleListSheet(
     workbook,
     {
-      sheetName: 'Tabla 2 Ponchado irregular',
-      title: 'Tabla 2. Listado de ponchado irregular por colaborador/a',
+      sheetName: useCompactSheetNames ? `T2 Ponchado${sheetSuffix}` : 'Tabla 2 Ponchado irregular',
+      title: `Tabla 2. Listado de ponchado irregular por colaborador/a${titleSuffix}`,
       headers: ['Nombres y Apellidos', 'Modo dePonchado', 'Cantidad'],
       widths: [42, 28, 12],
       pagePreset: 'table2',
@@ -1467,15 +1481,20 @@ function addTemplateSheets(workbook, result, reportOptions = {}) {
     reportOptions,
   );
 
-  addDisciplinaryReferenceSheet(workbook, reportOptions);
+  if (options.includeReferenceSheet !== false) {
+    addDisciplinaryReferenceSheet(workbook, reportOptions);
+  }
 
-  addHoursVsWorkedSheet(workbook, employees, reportOptions);
+  addHoursVsWorkedSheet(workbook, employees, reportOptions, {
+    sheetName: useCompactSheetNames ? `T6 Horas${sheetSuffix}` : 'Tabla 6 Horas y dias',
+    title: `Tabla 6. Relacion de horas y dias a trabajar vs horas y dias trabajados${titleSuffix}`,
+  });
 
   addEventualitiesSheet(
     workbook,
     {
-      sheetName: 'Tabla 7 Eventualidades',
-      title: 'Tabla 7. Eventualidades justificadas y no justificadas - Colaboradores/as',
+      sheetName: useCompactSheetNames ? `T7 Eventualidades${sheetSuffix}` : 'Tabla 7 Eventualidades',
+      title: `Tabla 7. Eventualidades justificadas y no justificadas - Colaboradores/as${titleSuffix}`,
       employees,
       filter: (employee) => !String(employee.tipoHorario).toLowerCase().includes('extendido'),
       groupBy: organizationGroup,
@@ -1490,8 +1509,8 @@ function addTemplateSheets(workbook, result, reportOptions = {}) {
   addEventualitiesSheet(
     workbook,
     {
-      sheetName: 'Tabla 8 Eventualidades HE',
-      title: 'Tabla 8. Eventualidades justificadas y no justificadas - Horario extendido',
+      sheetName: useCompactSheetNames ? `T8 Event HE${sheetSuffix}` : 'Tabla 8 Eventualidades HE',
+      title: `Tabla 8. Eventualidades justificadas y no justificadas - Horario extendido${titleSuffix}`,
       employees,
       filter: (employee) => String(employee.tipoHorario).toLowerCase().includes('extendido'),
       groupBy: organizationGroup,
@@ -1783,7 +1802,21 @@ export async function exportAttendanceReport(result, reportOptions = {}) {
   workbook.modified = new Date();
 
   await addControlReportSheet(workbook, result, reportOptions);
-  addTemplateSheets(workbook, result, reportOptions);
+  const separatedMonthlyTables =
+    result?.metadata?.monthSelectionMode === 'all' &&
+    result?.metadata?.multiMonthReportMode === 'separated' &&
+    (result?.monthlyResults?.length ?? 0) > 1;
+
+  if (separatedMonthlyTables) {
+    result.monthlyResults.forEach((monthResult, index) => {
+      addTemplateSheets(workbook, monthResult, reportOptions, {
+        monthLabel: monthResult.metadata?.selectedMonth?.label,
+        includeReferenceSheet: index === 0,
+      });
+    });
+  } else {
+    addTemplateSheets(workbook, result, reportOptions);
+  }
   const reportData = buildReportWorkbookData(result);
   reportData.sheets.forEach((sheet) => addRowsToWorksheet(workbook, sheet.name, sheet.rows));
   autoFitWorkbookTables(workbook);

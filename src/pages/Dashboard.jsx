@@ -188,6 +188,7 @@ export default function Dashboard({ activeUser, onLogout }) {
   });
   const [preview, setPreview] = useState({ headers: [], previewRows: [], rows: [], availableMonths: [] });
   const [selectedMonth, setSelectedMonth] = useState(null);
+  const [multiMonthReportMode, setMultiMonthReportMode] = useState('separated');
   const [result, setResult] = useState(null);
   const [errors, setErrors] = useState([]);
   const [fileWarnings, setFileWarnings] = useState([]);
@@ -225,7 +226,12 @@ export default function Dashboard({ activeUser, onLogout }) {
   }, [preview.headers.length, preview.validation]);
 
   function canPersistFullResult(nextResult) {
-    return Number(nextResult?.metadata?.processedRows ?? nextResult?.processedRows?.length ?? 0) <= MAX_LOCAL_STORAGE_RESULT_ROWS;
+    const processedRows = Number(nextResult?.metadata?.processedRows ?? nextResult?.processedRows?.length ?? 0);
+    const monthlyRows = (nextResult?.monthlyResults ?? []).reduce(
+      (total, monthResult) => total + Number(monthResult?.metadata?.processedRows ?? monthResult?.processedRows?.length ?? 0),
+      0,
+    );
+    return processedRows + monthlyRows <= MAX_LOCAL_STORAGE_RESULT_ROWS;
   }
 
   useEffect(() => {
@@ -393,6 +399,25 @@ export default function Dashboard({ activeUser, onLogout }) {
     workerRef.current?.postMessage({ type: 'preview', payload: { arrayBuffer } }, [arrayBuffer]);
   }
 
+  async function handlePrimarySheetChange(sheetName) {
+    if (!primaryFile || !sheetName) return;
+    if (result && !window.confirm('Cambiar la hoja del Excel principal limpiará el resultado actual. ¿Deseas continuar?')) {
+      return;
+    }
+    setResult(null);
+    setRestoredFromStorage(false);
+    clearLastResult();
+    setErrors([]);
+    setIsBusy(true);
+    setProgress(0);
+    setStatus('Cambiando hoja del Excel principal');
+    const arrayBuffer = await primaryFile.arrayBuffer();
+    workerRef.current?.postMessage(
+      { type: 'primary-sheet', payload: { arrayBuffer, sheetName } },
+      [arrayBuffer],
+    );
+  }
+
   async function processFile() {
     if (!mappingValidation.isValid) {
       setErrors(mappingValidation.errors);
@@ -455,6 +480,7 @@ export default function Dashboard({ activeUser, onLogout }) {
             eventualitiesFile: eventualitiesPayload,
             primaryFileName: primaryFile?.name ?? '',
             selectedMonth,
+            multiMonthReportMode,
           },
         },
         transferList,
@@ -720,6 +746,7 @@ export default function Dashboard({ activeUser, onLogout }) {
     setAuxiliaryPreviews({ extended: [], payroll: null, eventualities: null });
     setPreview({ headers: [], previewRows: [], rows: [], availableMonths: [] });
     setSelectedMonth(null);
+    setMultiMonthReportMode('separated');
     setResult(null);
     setErrors([]);
     setFileWarnings([]);
@@ -1150,7 +1177,7 @@ export default function Dashboard({ activeUser, onLogout }) {
             <DashboardOverview
               result={result}
               onStartUpload={() => setActiveTab('upload')}
-              activeRulesCount={3}
+              activeRulesCount={7}
               hasPendingAudit={hasPendingAudit}
             />
 
@@ -1197,30 +1224,80 @@ export default function Dashboard({ activeUser, onLogout }) {
               onChange={setAuxiliaryPreviews}
             />
 
+            {preview.sheets?.length > 1 ? (
+              <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                  <label className="grid gap-1.5">
+                    <span className="text-xs font-semibold uppercase text-slate-500">
+                      Hoja del Excel principal
+                    </span>
+                    <select
+                      className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                      value={preview.selectedSheetName ?? preview.sheetName ?? ''}
+                      disabled={isBusy}
+                      onChange={(event) => handlePrimarySheetChange(event.target.value)}
+                    >
+                      {preview.sheets.map((sheet) => (
+                        <option key={sheet.sheetName} value={sheet.sheetName}>
+                          {sheet.sheetName} ({Number(sheet.rowCount ?? 0).toLocaleString('es-DO')} fila(s))
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-900">
+                    Si el libro trae varias hojas, ReAS procesa solamente la hoja seleccionada.
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
             {preview.availableMonths?.length ? (
               <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70">
-                <label className="grid gap-1.5 sm:max-w-xs">
-                  <span className="text-xs font-semibold uppercase text-slate-500">
-                    Mes a calcular
-                  </span>
-                  <select
-                    className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
-                    value={selectedMonth?.key ?? ''}
-                    disabled={isBusy}
-                    onChange={(event) => {
-                      const month = preview.availableMonths.find((option) => option.key === event.target.value);
-                      setSelectedMonth(month ?? null);
-                      setResult(null);
-                      clearLastResult();
-                    }}
-                  >
-                    {preview.availableMonths.map((month) => (
-                      <option key={month.key} value={month.key}>
-                        {month.label} ({month.rowCount.toLocaleString()} fila(s))
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <label className="grid gap-1.5">
+                    <span className="text-xs font-semibold uppercase text-slate-500">
+                      Mes a calcular
+                    </span>
+                    <select
+                      className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                      value={selectedMonth?.key ?? ''}
+                      disabled={isBusy}
+                      onChange={(event) => {
+                        const month = preview.availableMonths.find((option) => option.key === event.target.value);
+                        setSelectedMonth(month ?? null);
+                        setResult(null);
+                        clearLastResult();
+                      }}
+                    >
+                      {preview.availableMonths.map((month) => (
+                        <option key={month.key} value={month.key}>
+                          {month.label} ({Number(month.rowCount ?? 0).toLocaleString('es-DO')} fila(s))
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {selectedMonth?.all ? (
+                    <label className="grid gap-1.5">
+                      <span className="text-xs font-semibold uppercase text-slate-500">
+                        Salida del Excel multimes
+                      </span>
+                      <select
+                        className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                        value={multiMonthReportMode}
+                        disabled={isBusy}
+                        onChange={(event) => {
+                          setMultiMonthReportMode(event.target.value);
+                          setResult(null);
+                          clearLastResult();
+                        }}
+                      >
+                        <option value="separated">Tablas separadas por mes</option>
+                        <option value="consolidated">Tablas consolidadas</option>
+                      </select>
+                    </label>
+                  ) : null}
+                </div>
               </section>
             ) : null}
 

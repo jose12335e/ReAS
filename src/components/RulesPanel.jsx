@@ -52,6 +52,34 @@ export default function RulesPanel({
           active={defaultScheduleType === SCHEDULE_TYPES.MODIFIED}
           tone="violet"
         />
+        <RuleCard
+          title="Matutino 9 a 3"
+          description="Lunes a viernes · 6 horas"
+          schedule={scheduleConfig[SCHEDULE_TYPES.MORNING_9_TO_3]}
+          active={defaultScheduleType === SCHEDULE_TYPES.MORNING_9_TO_3}
+          tone="teal"
+        />
+        <RuleCard
+          title="Vespertino 3 a 9"
+          description="Lunes a viernes · 6 horas"
+          schedule={scheduleConfig[SCHEDULE_TYPES.EVENING_3_TO_9]}
+          active={defaultScheduleType === SCHEDULE_TYPES.EVENING_3_TO_9}
+          tone="amber"
+        />
+        <RuleCard
+          title="Matutino 8 a 2"
+          description="Lunes a viernes · 6 horas"
+          schedule={scheduleConfig[SCHEDULE_TYPES.MORNING_8_TO_2]}
+          active={defaultScheduleType === SCHEDULE_TYPES.MORNING_8_TO_2}
+          tone="teal"
+        />
+        <RuleCard
+          title="Vespertino 2 a 8"
+          description="Lunes a viernes · 6 horas"
+          schedule={scheduleConfig[SCHEDULE_TYPES.EVENING_2_TO_8]}
+          active={defaultScheduleType === SCHEDULE_TYPES.EVENING_2_TO_8}
+          tone="amber"
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

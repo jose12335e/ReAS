@@ -142,7 +142,7 @@ export const useAttendanceStore = create(
     }),
     {
       name: 'reas-attendance-config',
-      version: 13,
+      version: 14,
       migrate: (persistedState) => {
         const saveSession = persistedState?.saveSession ?? true;
         const expired = isExpiredSession(persistedState?.lastSession);

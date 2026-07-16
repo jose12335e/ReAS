@@ -220,7 +220,7 @@ function datesInRange(startDate, endDate) {
 }
 
 function belongsToMonth(dateKey, evaluationMonth) {
-  if (!evaluationMonth || !dateKey) return true;
+  if (!evaluationMonth || evaluationMonth.all || !dateKey) return true;
   const [year, month] = dateKey.split('-').map(Number);
   return year === Number(evaluationMonth.year) && month - 1 === Number(evaluationMonth.month);
 }

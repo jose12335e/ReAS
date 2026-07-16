@@ -112,7 +112,7 @@ export function detectAvailableMonths(rows = [], mapping = {}) {
 }
 
 export function filterRowsByEvaluationMonth(rows = [], mapping = {}, evaluationMonth = null) {
-  if (!evaluationMonth) return rows;
+  if (!evaluationMonth || evaluationMonth.all) return rows;
 
   return rows.filter((row) => {
     const parsedDate = parseDateValue(row?.[mapping.fecha]);
@@ -125,7 +125,7 @@ export function filterRowsByEvaluationMonth(rows = [], mapping = {}, evaluationM
 }
 
 function scoreSheetName(sheetName, evaluationMonth) {
-  if (!evaluationMonth) return 0;
+  if (!evaluationMonth || evaluationMonth.all) return 0;
 
   const normalized = normalizeText(sheetName);
   const monthNumber = evaluationMonth.month + 1;

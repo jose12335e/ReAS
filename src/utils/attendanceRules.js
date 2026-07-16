@@ -115,6 +115,10 @@ function detectScheduleType(row, mapping, defaultScheduleType, extendedEmployeeC
   const raw = clean(asValue(row, mapping, 'tipoHorario')).toLowerCase();
   if (raw.includes('extend')) return SCHEDULE_TYPES.EXTENDED;
   if (raw.includes('modif')) return SCHEDULE_TYPES.MODIFIED;
+  if (raw.includes('matut') && raw.includes('9')) return SCHEDULE_TYPES.MORNING_9_TO_3;
+  if (raw.includes('vesp') && raw.includes('3')) return SCHEDULE_TYPES.EVENING_3_TO_9;
+  if (raw.includes('matut') && raw.includes('8')) return SCHEDULE_TYPES.MORNING_8_TO_2;
+  if (raw.includes('vesp') && raw.includes('2')) return SCHEDULE_TYPES.EVENING_2_TO_8;
   if (raw.includes('normal')) return SCHEDULE_TYPES.NORMAL;
   if (codeKeys.some((code) => extendedEmployeeCodes?.has(code))) return SCHEDULE_TYPES.EXTENDED;
   return defaultScheduleType || DEFAULT_SCHEDULE_TYPE;
@@ -195,7 +199,15 @@ function buildExcludedPayrollProcessedRow({ rawRow, mapping, index, rawCode, pay
 }
 
 function getAbsenceEquivalentMinutes(scheduleType, expectedMinutes) {
-  if (scheduleType === SCHEDULE_TYPES.MODIFIED) return expectedMinutes;
+  if (
+    scheduleType === SCHEDULE_TYPES.MODIFIED ||
+    scheduleType === SCHEDULE_TYPES.MORNING_9_TO_3 ||
+    scheduleType === SCHEDULE_TYPES.EVENING_3_TO_9 ||
+    scheduleType === SCHEDULE_TYPES.MORNING_8_TO_2 ||
+    scheduleType === SCHEDULE_TYPES.EVENING_2_TO_8
+  ) {
+    return expectedMinutes;
+  }
   return scheduleType === SCHEDULE_TYPES.EXTENDED ? 11 * 60 : 8 * 60;
 }
 
