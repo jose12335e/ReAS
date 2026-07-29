@@ -1263,7 +1263,7 @@ export default function Dashboard({ activeUser, onLogout }) {
         </header>
 
         <section
-          className={`rounded-lg border p-4 text-sm shadow-sm ${
+          className={`rounded-lg border px-4 py-2 text-xs shadow-sm ${
             saveSession
               ? 'border-amber-200 bg-amber-50 text-amber-950'
               : 'border-emerald-200 bg-emerald-50 text-emerald-950'
