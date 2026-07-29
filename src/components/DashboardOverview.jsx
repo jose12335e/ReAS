@@ -11,32 +11,11 @@ import {
   TimerOff,
   Users,
 } from 'lucide-react';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { lazy, Suspense, useMemo } from 'react';
 import { parseDurationToMinutes } from '../utils/timeUtils.js';
 import MetricCard from './MetricCard.jsx';
 
-const EVENT_COLORS = {
-  ausencias: '#e11d48',
-  tardanzas: '#d97706',
-  salidas: '#f97316',
-  ponches: '#64748b',
-  vacaciones: '#0284c7',
-  licencias: '#7c3aed',
-};
+const DashboardCharts = lazy(() => import('./DashboardCharts.jsx'));
 
 function formatDuration(totalMinutes = 0) {
   const safeMinutes = Math.max(0, Math.round(Number(totalMinutes || 0)));
@@ -90,7 +69,7 @@ function EmptyDashboard({ onStartUpload, activeRulesCount = 3 }) {
         />
         <MetricCard
           icon={ShieldCheck}
-          label="Auditoría"
+          label="Auditoria"
           value="Lista"
           description="Se activa luego del procesamiento."
           tone="amber"
@@ -108,8 +87,8 @@ function EmptyDashboard({ onStartUpload, activeRulesCount = 3 }) {
               Carga un archivo para generar el dashboard institucional.
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              Cuando proceses la asistencia, aquí aparecerán las métricas, los gráficos, el ranking de casos y la
-              auditoría de descuadres para revisar antes de exportar.
+              Cuando proceses la asistencia, aqui apareceran las metricas, los graficos, el ranking de casos y la
+              auditoria de descuadres para revisar antes de exportar.
             </p>
             <button
               className="mt-5 inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-sm shadow-slate-900/10 transition hover:bg-slate-800"
@@ -125,7 +104,7 @@ function EmptyDashboard({ onStartUpload, activeRulesCount = 3 }) {
             <ol className="mt-3 space-y-3 text-sm text-slate-700">
               <li className="rounded-xl bg-white p-3 ring-1 ring-slate-200">1. Cargar ponchado y auxiliares.</li>
               <li className="rounded-xl bg-white p-3 ring-1 ring-slate-200">2. Validar mes y columnas.</li>
-              <li className="rounded-xl bg-white p-3 ring-1 ring-slate-200">3. Procesar y revisar auditoría.</li>
+              <li className="rounded-xl bg-white p-3 ring-1 ring-slate-200">3. Procesar y revisar auditoria.</li>
               <li className="rounded-xl bg-white p-3 ring-1 ring-slate-200">4. Exportar Excel final.</li>
             </ol>
           </div>
@@ -135,14 +114,7 @@ function EmptyDashboard({ onStartUpload, activeRulesCount = 3 }) {
   );
 }
 
-export default function DashboardOverview({
-  result,
-  onStartUpload,
-  activeRulesCount = 3,
-  hasPendingAudit = false,
-}) {
-  if (!result) return <EmptyDashboard onStartUpload={onStartUpload} activeRulesCount={activeRulesCount} />;
-
+function ProcessedDashboardOverview({ result, activeRulesCount, hasPendingAudit }) {
   const summary = result.summaryGeneral ?? {};
   const totalEmployees = result.summaryByEmployee?.length ?? 0;
   const processedRows = result.metadata?.processedRows ?? result.processedRows?.length ?? 0;
@@ -155,24 +127,32 @@ export default function DashboardOverview({
     parseDurationToMinutes(summary.tiempoNoTrabajadoJustificado) +
     parseDurationToMinutes(summary.tiempoNoTrabajadoNoJustificado);
 
-  const eventDistribution = [
-    { name: 'Ausencias', value: totalAusencias, key: 'ausencias' },
-    { name: 'Tardanzas', value: totalTardanzas, key: 'tardanzas' },
-    { name: 'Salidas tempranas', value: totalSalidas, key: 'salidas' },
-    { name: 'Ponches irregulares', value: Number(summary.ponchesIrregulares || 0), key: 'ponches' },
-    { name: 'Vacaciones', value: Number(summary.vacaciones || 0), key: 'vacaciones' },
-    { name: 'Licencias', value: Number(summary.licencias || 0), key: 'licencias' },
-  ].filter((item) => item.value > 0);
+  const eventDistribution = useMemo(
+    () =>
+      [
+        { name: 'Ausencias', value: totalAusencias, key: 'ausencias' },
+        { name: 'Tardanzas', value: totalTardanzas, key: 'tardanzas' },
+        { name: 'Salidas tempranas', value: totalSalidas, key: 'salidas' },
+        { name: 'Ponches irregulares', value: Number(summary.ponchesIrregulares || 0), key: 'ponches' },
+        { name: 'Vacaciones', value: Number(summary.vacaciones || 0), key: 'vacaciones' },
+        { name: 'Licencias', value: Number(summary.licencias || 0), key: 'licencias' },
+      ].filter((item) => item.value > 0),
+    [summary, totalAusencias, totalSalidas, totalTardanzas],
+  );
 
-  const locationChart = (result.summaryByLocation ?? []).slice(0, 10).map((row) => ({
-    ubicacion: row.ubicacion,
-    Ausencias: Number(row.ausenciasJustificadas || 0) + Number(row.ausenciasNoJustificadas || 0),
-    Tardanzas: Number(row.tardanzasJustificadas || 0) + Number(row.tardanzasNoJustificadas || 0),
-    Salidas: Number(row.salidasTempranasJustificadas || 0) + Number(row.salidasTempranasNoJustificadas || 0),
-  }));
+  const locationChart = useMemo(
+    () =>
+      (result.summaryByLocation ?? []).slice(0, 10).map((row) => ({
+        ubicacion: row.ubicacion,
+        Ausencias: Number(row.ausenciasJustificadas || 0) + Number(row.ausenciasNoJustificadas || 0),
+        Tardanzas: Number(row.tardanzasJustificadas || 0) + Number(row.tardanzasNoJustificadas || 0),
+        Salidas: Number(row.salidasTempranasJustificadas || 0) + Number(row.salidasTempranasNoJustificadas || 0),
+      })),
+    [result.summaryByLocation],
+  );
 
-  const timeline = Array.from(
-    (result.processedRows ?? []).reduce((map, row) => {
+  const timeline = useMemo(() => {
+    const byDate = (result.processedRows ?? []).reduce((map, row) => {
       const date = row.FECHA || 'Sin fecha';
       if (!map.has(date)) map.set(date, { fecha: date, Ausencias: 0, Tardanzas: 0, Salidas: 0 });
       const current = map.get(date);
@@ -181,10 +161,11 @@ export default function DashboardOverview({
       if (state.includes('tardanza')) current.Tardanzas += 1;
       if (state.includes('salida temprana')) current.Salidas += 1;
       return map;
-    }, new Map()).values(),
-  )
-    .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)))
-    .slice(-14);
+    }, new Map());
+    return Array.from(byDate.values())
+      .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)))
+      .slice(-14);
+  }, [result.processedRows]);
 
   return (
     <section className="space-y-5">
@@ -198,7 +179,7 @@ export default function DashboardOverview({
         />
         <MetricCard
           icon={ShieldCheck}
-          label="Auditoría"
+          label="Auditoria"
           value={hasPendingAudit ? 'Revisar' : 'Cuadrada'}
           description={hasPendingAudit ? 'Hay descuadres pendientes.' : 'Sin descuadres activos.'}
           tone={hasPendingAudit ? 'amber' : 'teal'}
@@ -207,7 +188,7 @@ export default function DashboardOverview({
           icon={Settings}
           label="Reglas activas"
           value={activeRulesCount}
-          description="Configuración lista para exportar."
+          description="Configuracion lista para exportar."
           tone="blue"
         />
       </div>
@@ -217,10 +198,10 @@ export default function DashboardOverview({
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
             <div>
-              <div className="font-semibold">Empleados del ponchado no encontrados en nómina</div>
+              <div className="font-semibold">Empleados del ponchado no encontrados en nomina</div>
               <p className="mt-1">
                 {missingPayrollSummary.totalEmployees.toLocaleString('es-DO')} empleado(s) y{' '}
-                {Number(missingPayrollSummary.totalRows || 0).toLocaleString('es-DO')} fila(s) requieren revisión.
+                {Number(missingPayrollSummary.totalRows || 0).toLocaleString('es-DO')} fila(s) requieren revision.
               </p>
             </div>
           </div>
@@ -238,60 +219,35 @@ export default function DashboardOverview({
         <StatCard icon={TimerOff} label="Horas no trabajadas" value={formatDuration(totalNoTrabajadoMin)} tone="red" />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
-          <h2 className="text-base font-semibold text-slate-950">Distribución de eventualidades</h2>
-          <div className="mt-4 h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={eventDistribution} dataKey="value" nameKey="name" outerRadius={96} label>
-                  {eventDistribution.map((entry) => (
-                    <Cell key={entry.key} fill={EVENT_COLORS[entry.key]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+      <Suspense
+        fallback={
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm font-semibold text-slate-600 shadow-sm shadow-slate-200/70">
+            Preparando graficos...
           </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
-          <h2 className="text-base font-semibold text-slate-950">Eventualidades por ubicación</h2>
-          <div className="mt-4 h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={locationChart} margin={{ top: 8, right: 16, left: 0, bottom: 42 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="ubicacion" tick={{ fontSize: 11 }} angle={-18} textAnchor="end" height={58} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="Ausencias" fill={EVENT_COLORS.ausencias} radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Tardanzas" fill={EVENT_COLORS.tardanzas} radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Salidas" fill={EVENT_COLORS.salidas} radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
-        <h2 className="text-base font-semibold text-slate-950">Tendencia por fecha</h2>
-        <div className="mt-4 h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={timeline} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="fecha" tick={{ fontSize: 11 }} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="Ausencias" stroke={EVENT_COLORS.ausencias} strokeWidth={2} />
-              <Line type="monotone" dataKey="Tardanzas" stroke={EVENT_COLORS.tardanzas} strokeWidth={2} />
-              <Line type="monotone" dataKey="Salidas" stroke={EVENT_COLORS.salidas} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+        }
+      >
+        <DashboardCharts
+          eventDistribution={eventDistribution}
+          locationChart={locationChart}
+          timeline={timeline}
+        />
+      </Suspense>
     </section>
+  );
+}
+
+export default function DashboardOverview({
+  result,
+  onStartUpload,
+  activeRulesCount = 3,
+  hasPendingAudit = false,
+}) {
+  if (!result) return <EmptyDashboard onStartUpload={onStartUpload} activeRulesCount={activeRulesCount} />;
+  return (
+    <ProcessedDashboardOverview
+      result={result}
+      activeRulesCount={activeRulesCount}
+      hasPendingAudit={hasPendingAudit}
+    />
   );
 }

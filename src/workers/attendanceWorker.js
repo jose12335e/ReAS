@@ -259,11 +259,12 @@ self.onmessage = async (event) => {
     }
 
     if (type === 'aux-preview') {
-      const { kind, files = [], file = null, evaluationMonth = null } = payload;
+      const { kind, files = [], file = null, evaluationMonth = null, requestId = null } = payload;
       const monthForPreview = isAllMonthsSelection(evaluationMonth) ? null : evaluationMonth;
       if (kind === 'extended') {
         post('aux-preview:success', {
           kind,
+          requestId,
           files: files.map((currentFile, index) => ({
             id: currentFile.id ?? `${currentFile.name}-${index}`,
             ...previewExtendedScheduleWorkbook(
@@ -278,6 +279,7 @@ self.onmessage = async (event) => {
       if (kind === 'payroll') {
         post('aux-preview:success', {
           kind,
+          requestId,
           file: previewPayrollWorkbook(file?.arrayBuffer, file?.name),
         });
         return;
@@ -285,6 +287,7 @@ self.onmessage = async (event) => {
       if (kind === 'eventualities') {
         post('aux-preview:success', {
           kind,
+          requestId,
           file: previewEventualitiesWorkbook(file?.arrayBuffer, file?.name),
         });
         return;

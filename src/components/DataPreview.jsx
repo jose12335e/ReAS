@@ -1,33 +1,42 @@
 import {
   flexRender,
   getCoreRowModel,
-  getPaginationRowModel,
   useReactTable,
 } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Table2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+
+const PAGE_SIZE = 12;
 
 export default function DataPreview({ rows, title = 'Vista previa', description }) {
+  const [pageIndex, setPageIndex] = useState(0);
+  const safeRows = rows ?? [];
   const columns = useMemo(() => {
-    const headers = rows?.length ? Object.keys(rows[0]) : [];
+    const headers = safeRows.length ? Object.keys(safeRows[0]) : [];
     return headers.map((header) => ({
       accessorKey: header,
       header,
       cell: (info) => String(info.getValue() ?? ''),
     }));
+  }, [safeRows]);
+  const pageCount = Math.max(1, Math.ceil(safeRows.length / PAGE_SIZE));
+  const currentPageIndex = Math.min(pageIndex, pageCount - 1);
+  const visibleRows = useMemo(
+    () => safeRows.slice(currentPageIndex * PAGE_SIZE, currentPageIndex * PAGE_SIZE + PAGE_SIZE),
+    [currentPageIndex, safeRows],
+  );
+
+  useEffect(() => {
+    setPageIndex(0);
   }, [rows]);
 
   const table = useReactTable({
-    data: rows ?? [],
+    data: visibleRows,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    initialState: {
-      pagination: { pageSize: 12 },
-    },
   });
 
-  if (!rows?.length) return null;
+  if (!safeRows.length) return null;
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
@@ -42,7 +51,7 @@ export default function DataPreview({ rows, title = 'Vista previa', description 
           {description ? <p className="mt-1 text-sm text-slate-600">{description}</p> : null}
         </div>
         <span className="rounded-md bg-slate-100 px-3 py-1.5 text-sm font-semibold text-slate-600">
-          {rows.length.toLocaleString()} fila(s)
+          {safeRows.length.toLocaleString('es-DO')} fila(s)
         </span>
       </div>
 
@@ -79,20 +88,20 @@ export default function DataPreview({ rows, title = 'Vista previa', description 
         <button
           className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           type="button"
-          disabled={!table.getCanPreviousPage()}
-          onClick={() => table.previousPage()}
+          disabled={currentPageIndex <= 0}
+          onClick={() => setPageIndex((current) => Math.max(0, current - 1))}
         >
           <ChevronLeft className="h-4 w-4" />
           Anterior
         </button>
         <span className="text-sm text-slate-600">
-          Página {table.getState().pagination.pageIndex + 1} de {table.getPageCount()}
+          Pagina {currentPageIndex + 1} de {pageCount}
         </span>
         <button
           className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           type="button"
-          disabled={!table.getCanNextPage()}
-          onClick={() => table.nextPage()}
+          disabled={currentPageIndex >= pageCount - 1}
+          onClick={() => setPageIndex((current) => Math.min(pageCount - 1, current + 1))}
         >
           Siguiente
           <ChevronRight className="h-4 w-4" />

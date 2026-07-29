@@ -1,5 +1,5 @@
 import { Filter, Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import DataPreview from './DataPreview.jsx';
 
 const EVENT_FILTERS = [
@@ -13,38 +13,6 @@ const EVENT_FILTERS = [
   { value: 'correctos', label: 'Registros correctos' },
 ];
 
-function hasEvent(row, eventType) {
-  if (eventType === 'all') return true;
-  if (eventType === 'ausencias') {
-    return Number(row.ausenciasJustificadas || 0) + Number(row.ausenciasNoJustificadas || 0) > 0;
-  }
-  if (eventType === 'tardanzas') {
-    return Number(row.tardanzasJustificadas || 0) + Number(row.tardanzasNoJustificadas || 0) > 0;
-  }
-  if (eventType === 'salidas') {
-    return Number(row.salidasTempranasJustificadas || 0) + Number(row.salidasTempranasNoJustificadas || 0) > 0;
-  }
-  if (eventType === 'vacaciones') return Number(row.vacaciones || 0) > 0;
-  if (eventType === 'licencias') return Number(row.licencias || 0) > 0;
-  if (eventType === 'ponches') return Number(row.ponchesIrregulares || 0) > 0;
-  if (eventType === 'correctos') {
-    return (
-      Number(row.ausenciasJustificadas || 0) +
-        Number(row.ausenciasNoJustificadas || 0) +
-        Number(row.tardanzasJustificadas || 0) +
-        Number(row.tardanzasNoJustificadas || 0) +
-        Number(row.salidasTempranasJustificadas || 0) +
-        Number(row.salidasTempranasNoJustificadas || 0) +
-        Number(row.ponchesIrregulares || 0) +
-        Number(row.vacaciones || 0) +
-        Number(row.licencias || 0) +
-        Number(row.permisos || 0) ===
-      0
-    );
-  }
-  return true;
-}
-
 export default function ResultsExplorer({ result, selectedMonth }) {
   const [codeQuery, setCodeQuery] = useState('');
   const [nameQuery, setNameQuery] = useState('');
@@ -52,21 +20,53 @@ export default function ResultsExplorer({ result, selectedMonth }) {
   const [eventType, setEventType] = useState('all');
 
   const rows = result?.summaryByEmployee ?? [];
+  const deferredCodeQuery = useDeferredValue(codeQuery);
+  const deferredNameQuery = useDeferredValue(nameQuery);
+  const indexedRows = useMemo(
+    () =>
+      rows.map((row) => {
+        const eventCounts = {
+          ausencias: Number(row.ausenciasJustificadas || 0) + Number(row.ausenciasNoJustificadas || 0),
+          tardanzas: Number(row.tardanzasJustificadas || 0) + Number(row.tardanzasNoJustificadas || 0),
+          salidas:
+            Number(row.salidasTempranasJustificadas || 0) +
+            Number(row.salidasTempranasNoJustificadas || 0),
+          vacaciones: Number(row.vacaciones || 0),
+          licencias: Number(row.licencias || 0),
+          ponches: Number(row.ponchesIrregulares || 0),
+          permisos: Number(row.permisos || 0),
+        };
+        return {
+          row,
+          code: String(row.codigo || '').toLowerCase(),
+          name: String(row.nombre || '').toLowerCase(),
+          eventCounts,
+          hasAnyEvent: Object.values(eventCounts).some((value) => value > 0),
+        };
+      }),
+    [rows],
+  );
   const locations = useMemo(
     () => Array.from(new Set(rows.map((row) => row.ubicacion).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es')),
     [rows],
   );
   const filteredRows = useMemo(() => {
-    const codeNeedle = codeQuery.trim().toLowerCase();
-    const nameNeedle = nameQuery.trim().toLowerCase();
+    const codeNeedle = deferredCodeQuery.trim().toLowerCase();
+    const nameNeedle = deferredNameQuery.trim().toLowerCase();
 
-    return rows.filter((row) => {
-      const matchesCode = !codeNeedle || String(row.codigo || '').toLowerCase().includes(codeNeedle);
-      const matchesName = !nameNeedle || String(row.nombre || '').toLowerCase().includes(nameNeedle);
-      const matchesLocation = location === 'all' || row.ubicacion === location;
-      return matchesCode && matchesName && matchesLocation && hasEvent(row, eventType);
-    });
-  }, [codeQuery, eventType, location, nameQuery, rows]);
+    return indexedRows
+      .filter((item) => {
+        const { row } = item;
+        const matchesCode = !codeNeedle || item.code.includes(codeNeedle);
+        const matchesName = !nameNeedle || item.name.includes(nameNeedle);
+        const matchesLocation = location === 'all' || row.ubicacion === location;
+        const matchesEvent =
+          eventType === 'all' ||
+          (eventType === 'correctos' ? !item.hasAnyEvent : Number(item.eventCounts[eventType] || 0) > 0);
+        return matchesCode && matchesName && matchesLocation && matchesEvent;
+      })
+      .map((item) => item.row);
+  }, [deferredCodeQuery, deferredNameQuery, eventType, indexedRows, location]);
 
   if (!result) {
     return (

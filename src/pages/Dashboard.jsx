@@ -15,18 +15,12 @@ import {
   UserCheck,
   UploadCloud,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import AppSidebar from '../components/AppSidebar.jsx';
-import AuditReviewPanel from '../components/AuditReviewPanel.jsx';
 import AuxiliaryColumnMapper from '../components/AuxiliaryColumnMapper.jsx';
 import ColumnMapper from '../components/ColumnMapper.jsx';
-import DashboardOverview from '../components/DashboardOverview.jsx';
 import DataPreview from '../components/DataPreview.jsx';
-import EmployeeAlerts from '../components/EmployeeAlerts.jsx';
 import PageHeader from '../components/PageHeader.jsx';
-import ReportsPanel from '../components/ReportsPanel.jsx';
-import ResultsExplorer from '../components/ResultsExplorer.jsx';
-import RulesPanel from '../components/RulesPanel.jsx';
 import UploadExcel from '../components/UploadExcel.jsx';
 import { SCHEDULE_TYPES, scheduleConfig } from '../config/scheduleConfig.js';
 import { SESSION_TTL_HOURS, useAttendanceStore } from '../store/attendanceStore.js';
@@ -46,6 +40,21 @@ import {
 } from '../utils/validationRules.js';
 
 const MAX_LOCAL_STORAGE_RESULT_ROWS = 15000;
+
+const AuditReviewPanel = lazy(() => import('../components/AuditReviewPanel.jsx'));
+const DashboardOverview = lazy(() => import('../components/DashboardOverview.jsx'));
+const EmployeeAlerts = lazy(() => import('../components/EmployeeAlerts.jsx'));
+const ReportsPanel = lazy(() => import('../components/ReportsPanel.jsx'));
+const ResultsExplorer = lazy(() => import('../components/ResultsExplorer.jsx'));
+const RulesPanel = lazy(() => import('../components/RulesPanel.jsx'));
+
+function PanelLoading() {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm font-semibold text-slate-600 shadow-sm shadow-slate-200/70">
+      Cargando seccion...
+    </div>
+  );
+}
 
 function ProgressBar({ progress, status }) {
   if (!status) return null;
@@ -175,6 +184,7 @@ export default function Dashboard({ activeUser, onLogout }) {
   const workerRef = useRef(null);
   const persistenceTimerRef = useRef(null);
   const persistenceVersionRef = useRef(0);
+  const auxiliaryPreviewRequestRef = useRef({ extended: 0, payroll: 0, eventualities: 0 });
   const feedbackTimerRef = useRef(null);
   const auditActionLockRef = useRef(false);
   const [primaryFile, setPrimaryFile] = useState(null);
@@ -274,6 +284,13 @@ export default function Dashboard({ activeUser, onLogout }) {
       }
 
       if (type === 'aux-preview:success') {
+        if (
+          payload.requestId &&
+          payload.kind &&
+          payload.requestId !== auxiliaryPreviewRequestRef.current[payload.kind]
+        ) {
+          return;
+        }
         setAuxiliaryPreviews((current) => {
           if (payload.kind === 'extended') {
             return { ...current, extended: payload.files ?? [] };
@@ -538,12 +555,18 @@ export default function Dashboard({ activeUser, onLogout }) {
 
   async function requestAuxiliaryPreview(kind, payloadBuilder) {
     if (!workerRef.current) return;
+    const requestId = (auxiliaryPreviewRequestRef.current[kind] ?? 0) + 1;
+    auxiliaryPreviewRequestRef.current = {
+      ...auxiliaryPreviewRequestRef.current,
+      [kind]: requestId,
+    };
     const { payload, transferList } = await payloadBuilder();
     workerRef.current.postMessage(
       {
         type: 'aux-preview',
         payload: {
           kind,
+          requestId,
           evaluationMonth: selectedMonth,
           ...payload,
         },
@@ -552,16 +575,39 @@ export default function Dashboard({ activeUser, onLogout }) {
     );
   }
 
-  function handleSecondaryFiles(files) {
-    const validation = validateFilesForUpload(files, { label: 'Excel horario extendido' });
-    setFileWarnings(validation.warnings);
-    if (!validation.isValid) {
-      setErrors(validation.errors);
+  function invalidateAuxiliaryPreview(kind) {
+    auxiliaryPreviewRequestRef.current = {
+      ...auxiliaryPreviewRequestRef.current,
+      [kind]: (auxiliaryPreviewRequestRef.current[kind] ?? 0) + 1,
+    };
+  }
+
+  function clearProcessedResultForFileChange(message) {
+    if (result || lastResult) {
+      setResult(null);
+      setRestoredFromStorage(false);
+      setAuditFeedback(null);
+      persistenceVersionRef.current += 1;
+      clearLastResult();
+    }
+    setProgress(0);
+    setStatus('');
+    setIsBusy(false);
+    setFileWarnings(message ? [message] : []);
+  }
+
+  function confirmFileRemoval(label) {
+    if (!result) return true;
+    return window.confirm(
+      `Eliminar ${label} limpiara el reporte procesado porque la descarga actual ya no representaria los archivos cargados. Deseas continuar?`,
+    );
+  }
+
+  function requestExtendedPreviewForFiles(files) {
+    if (!files.length) {
+      invalidateAuxiliaryPreview('extended');
       return;
     }
-    setErrors([]);
-    setSecondaryFiles(files);
-    setAuxiliaryPreviews((current) => ({ ...current, extended: [] }));
     requestAuxiliaryPreview('extended', async () => {
       const filePayloads = await Promise.all(
         files.map(async (file, index) => ({
@@ -577,6 +623,64 @@ export default function Dashboard({ activeUser, onLogout }) {
     });
   }
 
+  function handleSecondaryFiles(files) {
+    const validation = validateFilesForUpload(files, { label: 'Excel horario extendido' });
+    setFileWarnings(validation.warnings);
+    if (!validation.isValid) {
+      setErrors(validation.errors);
+      return;
+    }
+    if (
+      result &&
+      !window.confirm('Cambiar los archivos de horario extendido limpiara el reporte actual. Deseas continuar?')
+    ) {
+      return;
+    }
+    setErrors([]);
+    setSecondaryFiles(files);
+    setAuxiliaryPreviews((current) => ({ ...current, extended: [] }));
+    clearProcessedResultForFileChange(validation.warnings[0] ?? '');
+    requestExtendedPreviewForFiles(files);
+  }
+
+  function handleClearPrimaryFile() {
+    if (!primaryFile || !confirmFileRemoval('el Excel principal')) return;
+    setPrimaryFile(null);
+    setPreview({ headers: [], previewRows: [], rows: [], availableMonths: [] });
+    setSelectedMonth(null);
+    setMapping({});
+    setErrors([]);
+    clearProcessedResultForFileChange(
+      'Excel principal eliminado. Carga otro archivo principal para volver a procesar.',
+    );
+    setActiveTab('upload');
+  }
+
+  function handleRemoveSecondaryFile(indexToRemove) {
+    const fileToRemove = secondaryFiles[indexToRemove];
+    if (!fileToRemove || !confirmFileRemoval(`el archivo de horario extendido "${fileToRemove.name}"`)) return;
+    const nextFiles = secondaryFiles.filter((_, index) => index !== indexToRemove);
+    setSecondaryFiles(nextFiles);
+    setAuxiliaryPreviews((current) => ({
+      ...current,
+      extended: current.extended.filter((_, index) => index !== indexToRemove),
+    }));
+    setErrors([]);
+    clearProcessedResultForFileChange(
+      `Se elimino "${fileToRemove.name}" de horario extendido. Procesa de nuevo para recalcular.`,
+    );
+    requestExtendedPreviewForFiles(nextFiles);
+  }
+
+  function handleClearSecondaryFiles() {
+    if (!secondaryFiles.length || !confirmFileRemoval('los archivos de horario extendido')) return;
+    setSecondaryFiles([]);
+    setAuxiliaryPreviews((current) => ({ ...current, extended: [] }));
+    invalidateAuxiliaryPreview('extended');
+    setErrors([]);
+    clearProcessedResultForFileChange('Archivos de horario extendido eliminados. Procesa de nuevo para recalcular.');
+  }
+
   function handlePayrollFile(file) {
     const validation = validateFileForUpload(file, { label: 'Excel nómina' });
     setFileWarnings(validation.warnings);
@@ -584,9 +688,13 @@ export default function Dashboard({ activeUser, onLogout }) {
       setErrors(validation.errors);
       return;
     }
+    if (result && !window.confirm('Cambiar la nomina limpiara el reporte actual. Deseas continuar?')) {
+      return;
+    }
     setErrors([]);
     setPayrollFile(file);
     setAuxiliaryPreviews((current) => ({ ...current, payroll: null }));
+    clearProcessedResultForFileChange(validation.warnings[0] ?? '');
     if (file) {
       requestAuxiliaryPreview('payroll', async () => {
         const arrayBuffer = await file.arrayBuffer();
@@ -598,6 +706,15 @@ export default function Dashboard({ activeUser, onLogout }) {
     }
   }
 
+  function handleClearPayrollFile() {
+    if (!payrollFile || !confirmFileRemoval(`la nomina "${payrollFile.name}"`)) return;
+    setPayrollFile(null);
+    setAuxiliaryPreviews((current) => ({ ...current, payroll: null }));
+    invalidateAuxiliaryPreview('payroll');
+    setErrors([]);
+    clearProcessedResultForFileChange('Nomina eliminada. Procesa de nuevo si necesitas recalcular sin ese cruce.');
+  }
+
   function handleEventualitiesFile(file) {
     const validation = validateFileForUpload(file, { label: 'Excel de eventualidades' });
     setFileWarnings(validation.warnings);
@@ -605,9 +722,16 @@ export default function Dashboard({ activeUser, onLogout }) {
       setErrors(validation.errors);
       return;
     }
+    if (
+      result &&
+      !window.confirm('Cambiar el Excel de eventualidades limpiara el reporte actual. Deseas continuar?')
+    ) {
+      return;
+    }
     setErrors([]);
     setEventualitiesFile(file);
     setAuxiliaryPreviews((current) => ({ ...current, eventualities: null }));
+    clearProcessedResultForFileChange(validation.warnings[0] ?? '');
     if (file) {
       requestAuxiliaryPreview('eventualities', async () => {
         const arrayBuffer = await file.arrayBuffer();
@@ -617,6 +741,17 @@ export default function Dashboard({ activeUser, onLogout }) {
         };
       });
     }
+  }
+
+  function handleClearEventualitiesFile() {
+    if (!eventualitiesFile || !confirmFileRemoval(`el Excel de eventualidades "${eventualitiesFile.name}"`)) return;
+    setEventualitiesFile(null);
+    setAuxiliaryPreviews((current) => ({ ...current, eventualities: null }));
+    invalidateAuxiliaryPreview('eventualities');
+    setErrors([]);
+    clearProcessedResultForFileChange(
+      'Excel de eventualidades eliminado. Procesa de nuevo si necesitas recalcular sin ese cruce.',
+    );
   }
 
   function scheduleResultPersistence(nextResult) {
@@ -1165,6 +1300,7 @@ export default function Dashboard({ activeUser, onLogout }) {
           ))}
         </nav>
 
+        <Suspense fallback={<PanelLoading />}>
         {activeTab === 'dashboard' ? (
           <section className="space-y-5">
             {restoredFromStorage && lastSession && result ? (
@@ -1207,6 +1343,11 @@ export default function Dashboard({ activeUser, onLogout }) {
               onSecondaryFiles={handleSecondaryFiles}
               onPayrollFile={handlePayrollFile}
               onEventualitiesFile={handleEventualitiesFile}
+              onClearPrimaryFile={handleClearPrimaryFile}
+              onRemoveSecondaryFile={handleRemoveSecondaryFile}
+              onClearSecondaryFiles={handleClearSecondaryFiles}
+              onClearPayrollFile={handleClearPayrollFile}
+              onClearEventualitiesFile={handleClearEventualitiesFile}
             />
 
             <ProgressBar progress={progress} status={status} />
@@ -1440,6 +1581,7 @@ export default function Dashboard({ activeUser, onLogout }) {
         ) : null}
 
         {activeTab === 'alerts' ? <EmployeeAlerts result={result} /> : null}
+        </Suspense>
       </div>
         </div>
       </div>

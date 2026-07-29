@@ -1,6 +1,5 @@
 import { Download, Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { downloadArrayBuffer } from '../utils/excelExporter.js';
 
 function sanitizeWorkbookFilename(value) {
   return String(value || '')
@@ -9,6 +8,20 @@ function sanitizeWorkbookFilename(value) {
     .replace(/\s+/g, ' ')
     .replace(/\.xlsx$/i, '')
     .replace(/[. ]+$/g, '');
+}
+
+function downloadArrayBuffer(buffer, filename) {
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 export default function ExportButton({ result, disabled, reportOptions, filename }) {

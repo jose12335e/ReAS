@@ -4,6 +4,7 @@ import {
   Files,
   LockKeyhole,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react';
 import InfoPanel from './InfoPanel.jsx';
 import UploadDropzone from './UploadDropzone.jsx';
@@ -14,10 +15,13 @@ function FileTypeCard({
   required,
   description,
   selectedText,
+  selectedItems,
   tone = 'teal',
   multiple,
   disabled,
   onChange,
+  onClear,
+  onRemoveItem,
 }) {
   const tones = {
     teal: 'border-teal-200 bg-teal-50/60 text-teal-700',
@@ -44,21 +48,71 @@ function FileTypeCard({
             </span>
           </div>
           <p className="mt-1 text-sm leading-5 text-slate-600">{selectedText || description}</p>
+
+          {selectedItems?.length ? (
+            <div className="mt-3 space-y-2">
+              {selectedItems.map((item, index) => (
+                <div
+                  className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                  key={`${item.name}-${index}`}
+                >
+                  <span className="min-w-0 truncate text-xs font-semibold text-slate-700">
+                    {item.name}
+                  </span>
+                  <button
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    title={`Eliminar ${item.name}`}
+                    disabled={disabled}
+                    onClick={() => onRemoveItem?.(index)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
           <div className="mt-3 flex flex-wrap gap-2">
-          <label className="inline-flex h-9 cursor-pointer items-center rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed">
-            Seleccionar archivo
-            <input
-              className="sr-only"
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              multiple={multiple}
-              disabled={disabled}
-              onChange={onChange}
-            />
-          </label>
+            <label className="inline-flex h-9 cursor-pointer items-center rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed">
+              Seleccionar archivo
+              <input
+                className="sr-only"
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                multiple={multiple}
+                disabled={disabled}
+                onChange={(event) => {
+                  onChange(event);
+                  event.target.value = '';
+                }}
+              />
+            </label>
             <span className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-600">
               Ver estructura requerida
             </span>
+            {selectedText && !selectedItems?.length ? (
+              <button
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
+                disabled={disabled}
+                onClick={onClear}
+              >
+                <Trash2 className="h-4 w-4" />
+                Eliminar
+              </button>
+            ) : null}
+            {selectedItems?.length > 1 && onClear ? (
+              <button
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
+                disabled={disabled}
+                onClick={onClear}
+              >
+                <Trash2 className="h-4 w-4" />
+                Eliminar todos
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -75,6 +129,11 @@ export default function UploadExcel({
   onSecondaryFiles,
   onPayrollFile,
   onEventualitiesFile,
+  onClearPrimaryFile,
+  onRemoveSecondaryFile,
+  onClearSecondaryFiles,
+  onClearPayrollFile,
+  onClearEventualitiesFile,
   disabled,
 }) {
   return (
@@ -87,13 +146,18 @@ export default function UploadExcel({
               Prepara el procesamiento de asistencia
             </h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
-              Sube el Excel principal y, si aplica, los libros auxiliares para horarios, nómina y eventualidades.
+              Sube el Excel principal y, si aplica, los libros auxiliares para horarios, nomina y eventualidades.
             </p>
           </div>
         </div>
 
         <div className="mt-5">
-          <UploadDropzone file={primaryFile} disabled={disabled} onFile={onPrimaryFile} />
+          <UploadDropzone
+            file={primaryFile}
+            disabled={disabled}
+            onFile={onPrimaryFile}
+            onClear={onClearPrimaryFile}
+          />
         </div>
       </div>
 
@@ -107,6 +171,7 @@ export default function UploadExcel({
           selectedText={primaryFile?.name}
           disabled={disabled}
           onChange={(event) => onPrimaryFile(event.target.files?.[0])}
+          onClear={onClearPrimaryFile}
         />
         <FileTypeCard
           icon={Files}
@@ -114,18 +179,22 @@ export default function UploadExcel({
           tone="blue"
           description="Cruza por CODIGO y puede elegir la hoja del mes evaluado."
           selectedText={secondaryFiles.length ? `${secondaryFiles.length} archivo(s) seleccionado(s)` : ''}
+          selectedItems={secondaryFiles}
           multiple
           disabled={disabled}
           onChange={(event) => onSecondaryFiles(Array.from(event.target.files ?? []))}
+          onRemoveItem={onRemoveSecondaryFile}
+          onClear={onClearSecondaryFiles}
         />
         <FileTypeCard
           icon={ShieldCheck}
-          title="Nómina"
+          title="Nomina"
           tone="amber"
-          description="Aporta cargo, ubicación, fecha de ingreso y exclusiones."
+          description="Aporta cargo, ubicacion, fecha de ingreso y exclusiones."
           selectedText={payrollFile?.name}
           disabled={disabled}
           onChange={(event) => onPayrollFile(event.target.files?.[0] ?? null)}
+          onClear={onClearPayrollFile}
         />
         <FileTypeCard
           icon={ClipboardCheck}
@@ -135,6 +204,7 @@ export default function UploadExcel({
           selectedText={eventualitiesFile?.name}
           disabled={disabled}
           onChange={(event) => onEventualitiesFile(event.target.files?.[0] ?? null)}
+          onClear={onClearEventualitiesFile}
         />
       </div>
 
@@ -142,12 +212,12 @@ export default function UploadExcel({
         <InfoPanel icon={FileSpreadsheet} title="Recomendaciones para carga exitosa" tone="blue">
           <ul className="grid gap-1 sm:grid-cols-3">
             <li>Usar .xlsx, .xls o .csv.</li>
-            <li>Verificar códigos y fechas.</li>
-            <li>Evitar celdas combinadas y encabezados vacíos.</li>
+            <li>Verificar codigos y fechas.</li>
+            <li>Evitar celdas combinadas y encabezados vacios.</li>
           </ul>
         </InfoPanel>
         <InfoPanel icon={LockKeyhole} title="Privacidad y seguridad" tone="teal">
-          Los archivos se procesan localmente en el navegador y el cálculo pesado corre en Web Worker.
+          Los archivos se procesan localmente en el navegador y el calculo pesado corre en Web Worker.
         </InfoPanel>
       </div>
     </section>
