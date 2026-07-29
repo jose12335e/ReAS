@@ -56,6 +56,48 @@ function PanelLoading() {
   );
 }
 
+function UploadStepStatus({ steps, action }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {steps.map((step) => (
+            <div
+              className={`rounded-xl border px-3 py-2 ${
+                step.done
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                  : step.active
+                    ? 'border-amber-200 bg-amber-50 text-amber-900'
+                    : 'border-slate-200 bg-slate-50 text-slate-500'
+              }`}
+              key={step.id}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${
+                    step.done ? 'bg-emerald-600' : step.active ? 'bg-amber-500' : 'bg-slate-300'
+                  }`}
+                />
+                <span className="text-xs font-semibold uppercase">{step.label}</span>
+              </div>
+              <div className="mt-1 text-sm font-semibold">{step.value}</div>
+            </div>
+          ))}
+        </div>
+        <button
+          className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-sm shadow-slate-900/10 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+          type="button"
+          disabled={action.disabled}
+          onClick={action.onClick}
+        >
+          {action.icon}
+          {action.label}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function ProgressBar({ progress, status }) {
   if (!status) return null;
 
@@ -911,6 +953,68 @@ export default function Dashboard({ activeUser, onLogout }) {
 
   const hasPendingAudit = Boolean(result?.audit?.hasDiscrepancies);
   const auditActionInProgress = auditFeedback?.status === 'processing';
+  const uploadSteps = [
+    {
+      id: 'file',
+      label: 'Archivo',
+      value: primaryFile ? 'Listo' : 'Pendiente',
+      done: Boolean(primaryFile),
+      active: !primaryFile,
+    },
+    {
+      id: 'month',
+      label: 'Mes / hoja',
+      value: selectedMonth?.label ?? (preview.headers.length ? 'Revisar' : 'Pendiente'),
+      done: Boolean(selectedMonth || (preview.headers.length && !preview.availableMonths?.length)),
+      active: Boolean(primaryFile && preview.headers.length && !selectedMonth && preview.availableMonths?.length),
+    },
+    {
+      id: 'columns',
+      label: 'Columnas',
+      value: mappingValidation.isValid ? 'Mapeadas' : `${mappingValidation.missing.length} faltan`,
+      done: mappingValidation.isValid && preview.headers.length > 0,
+      active: preview.headers.length > 0 && !mappingValidation.isValid,
+    },
+    {
+      id: 'process',
+      label: 'Proceso',
+      value: result ? 'Generado' : isBusy ? 'Procesando' : 'Sin procesar',
+      done: Boolean(result),
+      active: Boolean(preview.headers.length && mappingValidation.isValid && !result),
+    },
+  ];
+  const uploadAction = (() => {
+    if (!primaryFile) {
+      return {
+        label: 'Carga el Excel principal',
+        disabled: true,
+        icon: <UploadCloud className="h-4 w-4" />,
+        onClick: undefined,
+      };
+    }
+    if (!preview.headers.length) {
+      return {
+        label: isBusy ? 'Leyendo archivo...' : 'Esperando vista previa',
+        disabled: true,
+        icon: isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />,
+        onClick: undefined,
+      };
+    }
+    if (!mappingValidation.isValid || (workbookValidation && !workbookValidation.isValid)) {
+      return {
+        label: 'Revisa columnas',
+        disabled: true,
+        icon: <AlertTriangle className="h-4 w-4" />,
+        onClick: undefined,
+      };
+    }
+    return {
+      label: isBusy ? 'Procesando...' : 'Procesar asistencia',
+      disabled: isBusy,
+      icon: isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />,
+      onClick: processFile,
+    };
+  })();
   const tabs = [
     {
       id: 'dashboard',
@@ -1333,6 +1437,8 @@ export default function Dashboard({ activeUser, onLogout }) {
 
         {activeTab === 'upload' ? (
           <section className="space-y-5">
+            <UploadStepStatus steps={uploadSteps} action={uploadAction} />
+
             <UploadExcel
               primaryFile={primaryFile}
               secondaryFiles={secondaryFiles}
@@ -1354,16 +1460,26 @@ export default function Dashboard({ activeUser, onLogout }) {
 
             <ValidationSummaryPanel validation={workbookValidation} fileWarnings={fileWarnings} />
 
-            <AuxiliaryColumnMapper
-              previews={auxiliaryPreviews}
-              fields={{
-                extended: EXTENDED_SCHEDULE_FIELD_DEFINITIONS,
-                payroll: PAYROLL_FIELD_DEFINITIONS,
-                eventualities: EVENTUALITY_FIELD_DEFINITIONS,
-              }}
-              disabled={isBusy}
-              onChange={setAuxiliaryPreviews}
-            />
+            {auxiliaryPreviews.extended.length || auxiliaryPreviews.payroll || auxiliaryPreviews.eventualities ? (
+              <details className="group rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-slate-800">
+                  <span>Mapeo de archivos auxiliares</span>
+                  <span className="text-xs text-slate-500">Abrir para ajustar columnas</span>
+                </summary>
+                <div className="mt-4">
+                  <AuxiliaryColumnMapper
+                    previews={auxiliaryPreviews}
+                    fields={{
+                      extended: EXTENDED_SCHEDULE_FIELD_DEFINITIONS,
+                      payroll: PAYROLL_FIELD_DEFINITIONS,
+                      eventualities: EVENTUALITY_FIELD_DEFINITIONS,
+                    }}
+                    disabled={isBusy}
+                    onChange={setAuxiliaryPreviews}
+                  />
+                </div>
+              </details>
+            ) : null}
 
             {preview.sheets?.length > 1 ? (
               <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70">
@@ -1507,32 +1623,43 @@ export default function Dashboard({ activeUser, onLogout }) {
               </div>
             ) : null}
 
-            <ColumnMapper
-              headers={preview.headers}
-              mapping={mapping}
-              disabled={isBusy}
-              onChange={setMapping}
-            />
-
             {preview.headers.length ? (
-              <div className="flex justify-end">
-                <button
-                  className="inline-flex h-11 items-center gap-2 rounded-md bg-slate-950 px-5 text-sm font-semibold text-white shadow-sm shadow-slate-900/10 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
-                  type="button"
-                  disabled={isBusy || !mappingValidation.isValid || (workbookValidation && !workbookValidation.isValid)}
-                  onClick={processFile}
-                >
-                  {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                  Procesar asistencia
-                </button>
-              </div>
+              <details
+                className="group rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70"
+                open={!mappingValidation.isValid}
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-slate-800">
+                  <span>Mapeo de columnas del Excel principal</span>
+                  <span className={mappingValidation.isValid ? 'text-xs text-emerald-700' : 'text-xs text-amber-700'}>
+                    {mappingValidation.isValid ? 'Columnas listas' : 'Requiere revision'}
+                  </span>
+                </summary>
+                <div className="mt-4">
+                  <ColumnMapper
+                    headers={preview.headers}
+                    mapping={mapping}
+                    disabled={isBusy}
+                    onChange={setMapping}
+                  />
+                </div>
+              </details>
             ) : null}
 
-            <DataPreview
-              rows={preview.previewRows}
-              title="Vista previa de datos"
-              description="Primeras filas detectadas antes del procesamiento."
-            />
+            {preview.previewRows?.length ? (
+              <details className="group rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-slate-800">
+                  <span>Vista previa de datos</span>
+                  <span className="text-xs text-slate-500">{preview.previewRows.length} fila(s) de muestra</span>
+                </summary>
+                <div className="mt-4">
+                  <DataPreview
+                    rows={preview.previewRows}
+                    title="Vista previa de datos"
+                    description="Primeras filas detectadas antes del procesamiento."
+                  />
+                </div>
+              </details>
+            ) : null}
           </section>
         ) : null}
 
