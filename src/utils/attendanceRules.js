@@ -110,6 +110,13 @@ function isBeforeHireDate(rawRow, mapping, payrollRecord) {
   return rowDate !== null && hireDate !== null && rowDate < hireDate;
 }
 
+function isAfterTerminationDate(rawRow, mapping, payrollRecord) {
+  if (!payrollRecord?.fechaSalida) return false;
+  const rowDate = dateOnlyTimestamp(asValue(rawRow, mapping, 'fecha'));
+  const terminationDate = dateOnlyTimestamp(payrollRecord.fechaSalida);
+  return rowDate !== null && terminationDate !== null && rowDate > terminationDate;
+}
+
 function detectScheduleType(row, mapping, defaultScheduleType, extendedEmployeeCodes) {
   const codeKeys = getEmployeeCodeKeys(asValue(row, mapping, 'codigo'));
   const raw = clean(asValue(row, mapping, 'tipoHorario')).toLowerCase();
@@ -133,6 +140,8 @@ function createEmployeeRecord({
   posicion,
   cedula,
   fechaIngreso,
+  fechaSalida,
+  estatusNomina,
   scheduleType,
   modifiedSchedule,
 }) {
@@ -146,6 +155,8 @@ function createEmployeeRecord({
     posicion,
     cedula,
     fechaIngreso,
+    fechaSalida,
+    estatusNomina,
     tipoHorario: schedule.label,
     scheduleType,
     ...createEmptyMetrics(),
@@ -177,6 +188,8 @@ function buildExcludedPayrollProcessedRow({ rawRow, mapping, index, rawCode, pay
     POSICION: payrollRecord.posicion || '',
     CEDULA: payrollRecord.cedula || '',
     'Fecha ingreso': payrollRecord.fechaIngreso || '',
+    'Fecha salida': payrollRecord.fechaSalida || '',
+    'Estatus nomina': payrollRecord.estatus || '',
     FECHA: clean(asValue(rawRow, mapping, 'fecha')),
     DIA: clean(asValue(rawRow, mapping, 'dia')),
     'Tipo horario': '',
@@ -316,6 +329,8 @@ function buildProcessedOutput(row, metrics) {
     POSICION: row.posicion,
     CEDULA: row.cedula,
     'Fecha ingreso': row.fechaIngreso,
+    'Fecha salida': row.fechaSalida,
+    'Estatus nomina': row.estatusNomina,
     FECHA: row.fecha,
     DIA: row.dia,
     'Tipo horario': row.tipoHorario,
@@ -723,8 +738,11 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
     totalRows: 0,
     byPositionRows: 0,
     byHierarchyPositionRows: 0,
+    byInactiveStatusRows: 0,
     byHireDateRows: 0,
+    byTerminationDateRows: 0,
     beforeHireDateRows: 0,
+    afterTerminationDateRows: 0,
   };
   const events = {
     tardanzas: [],
@@ -756,12 +774,15 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
     const payrollRecord = findPayrollRecord(payrollEmployeesByCode, rawCode);
     const isMissingFromPayroll = !payrollRecord && registerMissingPayrollEmployee(rawRow, index, rawCode);
     const isBeforePayrollHireDate = isBeforeHireDate(rawRow, mapping, payrollRecord);
+    const isAfterPayrollTerminationDate = isAfterTerminationDate(rawRow, mapping, payrollRecord);
     if (payrollRecord?.excluded) {
       excludedRowsByPayroll += 1;
       payrollExclusionSummary.totalRows += 1;
       if (payrollRecord.excludedByPosition) payrollExclusionSummary.byPositionRows += 1;
       if (payrollRecord.excludedByHierarchyPosition) payrollExclusionSummary.byHierarchyPositionRows += 1;
+      if (payrollRecord.excludedByInactiveStatus) payrollExclusionSummary.byInactiveStatusRows += 1;
       if (payrollRecord.excludedByHireDate) payrollExclusionSummary.byHireDateRows += 1;
+      if (payrollRecord.excludedByTerminationDate) payrollExclusionSummary.byTerminationDateRows += 1;
       processedRows.push({
         '#': index + 1,
         NOMBRE: payrollRecord.nombre || clean(asValue(rawRow, mapping, 'nombre')),
@@ -772,6 +793,8 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
         POSICION: payrollRecord.posicion || '',
         CEDULA: payrollRecord.cedula || '',
         'Fecha ingreso': payrollRecord.fechaIngreso || '',
+        'Fecha salida': payrollRecord.fechaSalida || '',
+        'Estatus nomina': payrollRecord.estatus || '',
         FECHA: clean(asValue(rawRow, mapping, 'fecha')),
         DIA: clean(asValue(rawRow, mapping, 'dia')),
         'Tipo horario': '',
@@ -808,6 +831,21 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
       }));
       return;
     }
+    if (isAfterPayrollTerminationDate) {
+      const reason = 'Marca posterior a la fecha de salida';
+      excludedRowsByPayroll += 1;
+      payrollExclusionSummary.totalRows += 1;
+      payrollExclusionSummary.afterTerminationDateRows += 1;
+      processedRows.push(buildExcludedPayrollProcessedRow({
+        rawRow,
+        mapping,
+        index,
+        rawCode,
+        payrollRecord,
+        reason,
+      }));
+      return;
+    }
 
     const result = evaluateAttendanceRow(rawRow, mapping, {
       ...options,
@@ -824,6 +862,8 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
       row.posicion = payrollRecord.posicion || '';
       row.cedula = payrollRecord.cedula || '';
       row.fechaIngreso = payrollRecord.fechaIngreso || '';
+      row.fechaSalida = payrollRecord.fechaSalida || '';
+      row.estatusNomina = payrollRecord.estatus || '';
       processedRow.NOMBRE = row.nombre;
       processedRow.UBICACION = row.ubicacion;
       processedRow.DEPARTAMENTO = row.departamento;
@@ -831,6 +871,8 @@ export function processAttendanceRows(rows = [], mapping = {}, options = {}) {
       processedRow.POSICION = row.posicion;
       processedRow.CEDULA = row.cedula;
       processedRow['Fecha ingreso'] = row.fechaIngreso;
+      processedRow['Fecha salida'] = row.fechaSalida;
+      processedRow['Estatus nomina'] = row.estatusNomina;
     }
     if (isMissingFromPayroll) {
       const alert = 'No encontrado en nómina';

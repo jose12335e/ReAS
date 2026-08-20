@@ -10,6 +10,8 @@ const HEADER_ALIASES = {
   hierarchyPosition: ['POSICION', 'POSICIÓN'],
   location: ['UBICACION', 'UBICACIÓN', 'DEPARTAMENTO', 'AREA', 'ÁREA', 'DIRECCION', 'DIRECCIÓN'],
   hireDate: ['FECHA DE INGRESO', 'FECHA INGRESO', 'INGRESO', 'FECHA INICIO', 'FECHA DE ENTRADA'],
+  terminationDate: ['FECHA DE SALIDA', 'FECHA SALIDA', 'SALIDA', 'FECHA CANCELACION', 'FECHA CANCELACIÃ“N', 'FECHA DE BAJA'],
+  status: ['ESTATUS', 'STATUS', 'ESTADO', 'ESTADO EMPLEADO', 'ESTATUS EMPLEADO', 'SITUACION', 'SITUACIÃ“N'],
 };
 
 export const PAYROLL_FIELD_DEFINITIONS = [
@@ -20,6 +22,8 @@ export const PAYROLL_FIELD_DEFINITIONS = [
   { key: 'hierarchyPosition', label: 'Posicion', required: false },
   { key: 'location', label: 'Ubicacion', required: false },
   { key: 'hireDate', label: 'Fecha de ingreso', required: true },
+  { key: 'terminationDate', label: 'Fecha de salida', required: false },
+  { key: 'status', label: 'Estatus', required: false },
 ];
 
 function normalizeHeader(value = '') {
@@ -87,7 +91,7 @@ function inferPayrollMappingFromHeaders(headers = []) {
 
 function scorePayrollSheet(rows = []) {
   const mapping = inferPayrollMapping(rows);
-  return ['code', 'position', 'location', 'hireDate', 'name'].reduce(
+  return ['code', 'position', 'location', 'hireDate', 'terminationDate', 'status', 'name'].reduce(
     (score, field) => score + (mapping[field] ? 1 : 0),
     0,
   );
@@ -131,7 +135,7 @@ function rowsFromSheetPreview(worksheet, previewLimit = 5) {
 }
 
 function scorePayrollMapping(mapping = {}) {
-  return ['code', 'position', 'location', 'hireDate', 'name'].reduce(
+  return ['code', 'position', 'location', 'hireDate', 'terminationDate', 'status', 'name'].reduce(
     (score, field) => score + (mapping[field] ? 1 : 0),
     0,
   );
@@ -211,6 +215,15 @@ function normalizePosition(value = '') {
     .toUpperCase();
 }
 
+function normalizeStatus(value = '') {
+  return clean(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function isExcludedPosition(position, hierarchyPosition = '') {
   const normalized = normalizePosition(position);
   const normalizedHierarchyPosition = normalizePosition(hierarchyPosition);
@@ -220,10 +233,20 @@ function isExcludedPosition(position, hierarchyPosition = '') {
   );
 }
 
+function isInactiveStatus(status = '') {
+  return /\b(CANCELADO|RENUNCIANTE|INACTIVO)\b/.test(normalizeStatus(status));
+}
+
 function isAfterEvaluationPeriod(hireDate, evaluationMonth) {
   if (!hireDate || !evaluationMonth) return false;
   const periodEnd = new Date(evaluationMonth.year, evaluationMonth.month + 1, 0, 23, 59, 59, 999);
   return hireDate.getTime() > periodEnd.getTime();
+}
+
+function isBeforeEvaluationPeriod(terminationDate, evaluationMonth) {
+  if (!terminationDate || !evaluationMonth) return false;
+  const periodStart = new Date(evaluationMonth.year, evaluationMonth.month, 1, 0, 0, 0, 0);
+  return terminationDate.getTime() < periodStart.getTime();
 }
 
 export function parsePayrollWorkbook(arrayBuffer, fileName, evaluationMonth, options = {}) {
@@ -259,11 +282,15 @@ export function parsePayrollWorkbook(arrayBuffer, fileName, evaluationMonth, opt
     if (!codeKeys.length) return;
 
     const hireDate = parseDateValue(row?.[mapping.hireDate]);
+    const terminationDate = parseDateValue(row?.[mapping.terminationDate]);
     const position = clean(row?.[mapping.position]);
     const hierarchyPosition = clean(row?.[mapping.hierarchyPosition]);
+    const status = clean(row?.[mapping.status]);
     const excludedByPosition = isExcludedPosition(position, hierarchyPosition);
     const excludedByHierarchyPosition = /\bDIRECCION\s+V\b/.test(normalizePosition(hierarchyPosition));
+    const excludedByInactiveStatus = isInactiveStatus(status);
     const excludedByHireDate = isAfterEvaluationPeriod(hireDate, evaluationMonth);
+    const excludedByTerminationDate = isBeforeEvaluationPeriod(terminationDate, evaluationMonth);
     const record = {
       codigo: clean(row?.[mapping.code]),
       nombre: clean(row?.[mapping.name]),
@@ -272,13 +299,21 @@ export function parsePayrollWorkbook(arrayBuffer, fileName, evaluationMonth, opt
       posicion: hierarchyPosition,
       ubicacion: clean(row?.[mapping.location]),
       fechaIngreso: hireDate ? hireDate.toISOString().slice(0, 10) : clean(row?.[mapping.hireDate]),
-      excluded: excludedByPosition || excludedByHireDate,
+      fechaSalida: terminationDate
+        ? terminationDate.toISOString().slice(0, 10)
+        : clean(row?.[mapping.terminationDate]),
+      estatus: status,
+      excluded: excludedByPosition || excludedByInactiveStatus || excludedByHireDate || excludedByTerminationDate,
       excludedByPosition,
       excludedByHierarchyPosition,
+      excludedByInactiveStatus,
       excludedByHireDate,
+      excludedByTerminationDate,
       exclusionReason: [
         excludedByPosition ? 'Cargo/posición excluida por nómina' : '',
+        excludedByInactiveStatus ? `Estatus excluido por nómina: ${status || 'sin estatus'}` : '',
         excludedByHireDate ? 'Ingreso posterior al período evaluado' : '',
+        excludedByTerminationDate ? 'Salida anterior al período evaluado' : '',
       ]
         .filter(Boolean)
         .join('; '),

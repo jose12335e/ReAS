@@ -629,11 +629,16 @@ function organizationGroup(employee) {
   return employee.departamento || employee.ubicacion;
 }
 
-function sortEmployeesByPriority(employees, getPriority) {
+function sortEmployeesByPriority(employees, getPriority, getTieBreaker) {
   return [...employees].sort((a, b) => {
     const priorityA = Number(getPriority(a) || 0);
     const priorityB = Number(getPriority(b) || 0);
     if (priorityB !== priorityA) return priorityB - priorityA;
+    if (getTieBreaker) {
+      const tieA = Number(getTieBreaker(a) || 0);
+      const tieB = Number(getTieBreaker(b) || 0);
+      if (tieB !== tieA) return tieB - tieA;
+    }
     return collaboratorName(a).localeCompare(collaboratorName(b), 'es', { sensitivity: 'base' });
   });
 }
@@ -665,10 +670,13 @@ function durationStringToExcelDuration(value) {
 }
 
 function table6Priority(employee) {
+  return Number(employee.tasaAusentismo || 0);
+}
+
+function table6TieBreaker(employee) {
   const expected = Number(employee.horasEsperadas || 0);
   const recognized = Number(employee.horasReconocidas ?? employee.horasTrabajadasReconocidas ?? 0);
-  const missingHours = Math.max(0, expected - recognized);
-  return missingHours * 100 + Number(employee.tasaAusentismo || 0);
+  return Math.max(0, expected - recognized);
 }
 
 function nonJustifiedEventMinutes(employee) {
@@ -1319,7 +1327,7 @@ function addHoursVsWorkedSheet(workbook, employees, reportOptions = {}, options 
   });
 
   groupBy(employees, organizationGroup).forEach(([groupName, groupEmployees]) => {
-    const sortedEmployees = sortEmployeesByPriority(groupEmployees, table6Priority);
+    const sortedEmployees = sortEmployeesByPriority(groupEmployees, table6Priority, table6TieBreaker);
     rowNumber = pagination.beforeRows(rowNumber, Math.min(2, groupEmployees.length + 1));
     addGroupRow(worksheet, rowNumber, groupName, 8);
     rowNumber += 1;
@@ -1512,7 +1520,7 @@ function addConsolidatedHoursVsWorkedSheet(workbook, monthlyResults = [], report
     pagination.addRows(1);
 
     groupBy(employees, organizationGroup).forEach(([groupName, groupEmployees]) => {
-      const sortedEmployees = sortEmployeesByPriority(groupEmployees, table6Priority);
+      const sortedEmployees = sortEmployeesByPriority(groupEmployees, table6Priority, table6TieBreaker);
       if (!sortedEmployees.length) return;
       rowNumber = pagination.beforeRows(rowNumber, Math.min(2, sortedEmployees.length + 1));
       addGroupRow(worksheet, rowNumber, groupName, 8);
@@ -2218,8 +2226,26 @@ async function addControlReportSheet(workbook, result, reportOptions = {}) {
     'Eventualidades con -1',
     formatCount(eventualityAudit.stats?.pendingTime),
   );
+  addControlKeyValue(
+    worksheet,
+    45,
+    'Estatus cancelado/renunciante/inactivo',
+    formatCount(payrollSummary.byInactiveStatusRows, ' fila(s)'),
+  );
+  addControlKeyValue(
+    worksheet,
+    46,
+    'Salida anterior al mes',
+    formatCount(payrollSummary.byTerminationDateRows, ' fila(s)'),
+  );
+  addControlKeyValue(
+    worksheet,
+    47,
+    'Marcas despues de fecha de salida',
+    formatCount(payrollSummary.afterTerminationDateRows, ' fila(s)'),
+  );
 
-  const warningTitleRow = 46;
+  const warningTitleRow = 49;
   const warningStartRow = warningTitleRow + 1;
   addControlSectionTitle(worksheet, warningTitleRow, 'Advertencias del procesamiento');
   if (warnings.length) {
