@@ -510,10 +510,18 @@ function isAttendanceOnlyAutomaticEventuality(item = {}) {
   );
 }
 
+function isSettledMatchedEventuality(item = {}) {
+  if (item.status !== 'confirmado' || !item.sourceMatch || item.pendingTime) return false;
+  const suggested = Math.round(Number(item.tiempoSugeridoMin ?? 0));
+  const classified = Math.round(Number(item.tiempoClasificadoActualMin ?? 0));
+  return suggested > 0 && suggested === classified;
+}
+
 function needsManualReview(item = {}) {
   if (item.resolved) return false;
   if (item.pendingTime || item.status === 'requiere_confirmacion') return true;
   if (['tipo_no_reconocido', 'tipo_diferente'].includes(item.status)) return true;
+  if (isSettledMatchedEventuality(item)) return false;
   if (isAttendanceOnlyAutomaticEventuality(item)) return false;
   if (isClearAutomaticClassification(item)) return false;
   if (item.status === 'solo_eventualidades') return true;

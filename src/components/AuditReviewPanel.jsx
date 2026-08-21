@@ -304,6 +304,7 @@ function DetailCard({
   const differenceMin = Number(detail?.diferenciaMin || employee.diferenciaMin || 0);
   const isMissing = differenceMin > 0;
   const requiresTimeEntry = Boolean(detail?.requiereCapturaTiempo);
+  const isReadOnly = Boolean(detail?.soloLectura);
   const defaultTime = defaultAdjustmentTime(employee, detail);
   const adjustmentTime = manualTime ?? defaultTime;
   const adjustmentMinutes = Math.abs(parseDurationToMinutes(adjustmentTime));
@@ -331,6 +332,11 @@ function DetailCard({
               Este permiso no tiene tiempo registrado. Escribe el tiempo del ajuste y registralo desde aqui.
             </p>
           ) : null}
+          {isReadOnly ? (
+            <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+              Esta alerta compara el resumen con la data procesada. Revisa las filas reales antes de aplicar ajustes.
+            </p>
+          ) : null}
         </div>
 
         <label className="grid gap-1 text-xs font-semibold uppercase text-slate-500 sm:min-w-40">
@@ -339,7 +345,7 @@ function DetailCard({
             className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
             value={adjustmentTime}
             placeholder="HH:MM:SS"
-            disabled={disabled}
+            disabled={disabled || isReadOnly}
             onChange={(event) => onManualTimeChange(event.target.value)}
           />
         </label>
@@ -375,7 +381,7 @@ function DetailCard({
       <div className="mt-4 flex flex-wrap gap-2">
         <AdjustmentButton
           tone="amber"
-          disabled={disabled}
+          disabled={disabled || isReadOnly}
           onClick={() => onAddIrregularPunch(employee, detail)}
         >
           <span className="inline-flex items-center gap-1">
@@ -385,7 +391,7 @@ function DetailCard({
         </AdjustmentButton>
         <AdjustmentButton
           tone="rose"
-          disabled={disabled}
+          disabled={disabled || isReadOnly}
           onClick={() => onExcludeDetail(employee, detail)}
         >
           <span className="inline-flex items-center gap-1">
@@ -394,7 +400,7 @@ function DetailCard({
           </span>
         </AdjustmentButton>
         <AdjustmentButton
-          disabled={disabled || !adjustmentMinutes || !canApplyJustified}
+          disabled={disabled || isReadOnly || !adjustmentMinutes || !canApplyJustified}
           onClick={() =>
             onApply('justified', {
               adjustmentMinutes,
@@ -408,7 +414,7 @@ function DetailCard({
         </AdjustmentButton>
         <AdjustmentButton
           tone="navy"
-          disabled={disabled || !adjustmentMinutes || !canApplyUnjustified}
+          disabled={disabled || isReadOnly || !adjustmentMinutes || !canApplyUnjustified}
           onClick={() =>
             onApply('unjustified', {
               adjustmentMinutes,

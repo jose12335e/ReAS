@@ -163,6 +163,14 @@ function buildDailyAuditDetail(row) {
   };
 }
 
+function isSettledClassifiedDetail(detail = {}) {
+  if (detail.diferenciaMin !== 0 || detail.requiereCapturaTiempo) return false;
+  const state = String(detail.estadoFinal || '');
+  const observation = String(detail.observacion || '');
+  const text = `${state} ${observation}`;
+  return /vacaci[oó]n|licencia|permiso|feriado|ver viatico|ver viático|trabajo externo/i.test(text);
+}
+
 function buildDailyAuditDetails(processedRows = [], employeeDifferenceMin = 0) {
   const details = processedRows.map(buildDailyAuditDetail);
   const timeEntryFindings = details.filter((detail) => detail.requiereCapturaTiempo);
@@ -188,6 +196,7 @@ function buildDailyAuditDetails(processedRows = [], employeeDifferenceMin = 0) {
       : /excede|permiso|licencia|ausencia|tardanza|salida/i;
 
   return details
+    .filter((detail) => !isSettledClassifiedDetail(detail))
     .filter((detail) =>
       detail.pistas.some((hint) => relevantPattern.test(hint)) ||
       relevantPattern.test(detail.estadoFinal),
@@ -202,6 +211,82 @@ function buildDailyAuditDetails(processedRows = [], employeeDifferenceMin = 0) {
     .slice(0, 5);
 }
 
+function buildProcessedRowsConsistency(processedRows = [], employee = {}) {
+  const totals = processedRows.reduce(
+    (acc, row) => {
+      acc.expectedMin += hoursToMinutes(processedRowValue(row, 'Horas esperadas'));
+      acc.recognizedMin += hoursToMinutes(processedRowValue(row, 'Horas trabajadas reconocidas'));
+      acc.justifiedMin += parseDurationToMinutes(processedRowValue(row, 'Tiempo no trabajado justificado'));
+      acc.unjustifiedMin += parseDurationToMinutes(processedRowValue(row, 'Tiempo no trabajado no justificado'));
+      return acc;
+    },
+    {
+      expectedMin: 0,
+      recognizedMin: 0,
+      justifiedMin: 0,
+      unjustifiedMin: 0,
+    },
+  );
+  const summary = {
+    expectedMin: hoursToMinutes(employee.horasEsperadas),
+    recognizedMin: hoursToMinutes(employee.horasReconocidas ?? employee.horasTrabajadasReconocidas),
+    justifiedMin: parseDurationToMinutes(employee.tiempoNoTrabajadoJustificado),
+    unjustifiedMin: parseDurationToMinutes(employee.tiempoNoTrabajadoNoJustificado),
+  };
+  const differences = {
+    expectedMin: summary.expectedMin - totals.expectedMin,
+    recognizedMin: summary.recognizedMin - totals.recognizedMin,
+    justifiedMin: summary.justifiedMin - totals.justifiedMin,
+    unjustifiedMin: summary.unjustifiedMin - totals.unjustifiedMin,
+  };
+  const hasMismatch = Object.values(differences).some((value) => Math.abs(value) > 0);
+
+  return {
+    ...totals,
+    summary,
+    differences,
+    hasMismatch,
+  };
+}
+
+function buildConsistencyAuditDetail(consistency) {
+  const strongestDifference = Object.values(consistency.differences).reduce(
+    (selected, value) => (Math.abs(value) > Math.abs(selected) ? value : selected),
+    0,
+  );
+  return {
+    fila: 'RESUMEN',
+    fecha: 'Resumen vs data procesada',
+    dia: '',
+    entrada: 'n/a',
+    salida: 'n/a',
+    observacion: 'Auditoria interna',
+    tiempoObservaciones: 'n/a',
+    horasEsperadas: `${formatMinutes(consistency.summary.expectedMin)} / filas ${formatMinutes(consistency.expectedMin)}`,
+    horasTrabajadasReales: 'n/a',
+    horasReconocidas: `${formatMinutes(consistency.summary.recognizedMin)} / filas ${formatMinutes(consistency.recognizedMin)}`,
+    tiempoTardanza: '00:00:00',
+    tiempoSalidaTemprana: '00:00:00',
+    tiempoJustificado: `${formatMinutes(consistency.summary.justifiedMin)} / filas ${formatMinutes(consistency.justifiedMin)}`,
+    tiempoNoJustificado: `${formatMinutes(consistency.summary.unjustifiedMin)} / filas ${formatMinutes(consistency.unjustifiedMin)}`,
+    totalCalculado: formatMinutes(
+      consistency.recognizedMin + consistency.justifiedMin + consistency.unjustifiedMin,
+    ),
+    diferenciaMin: strongestDifference,
+    diferencia: formatMinutes(strongestDifference),
+    requiereCapturaTiempo: false,
+    soloLectura: true,
+    estadoFinal: 'Resumen del empleado no coincide con data procesada',
+    posibleFallo: 'El resumen del empleado no coincide con la suma de sus filas procesadas.',
+    pistas: [
+      `Esperadas: resumen ${formatMinutes(consistency.summary.expectedMin)} vs filas ${formatMinutes(consistency.expectedMin)}`,
+      `Reconocidas: resumen ${formatMinutes(consistency.summary.recognizedMin)} vs filas ${formatMinutes(consistency.recognizedMin)}`,
+      `Justificado: resumen ${formatMinutes(consistency.summary.justifiedMin)} vs filas ${formatMinutes(consistency.justifiedMin)}`,
+      `No justificado: resumen ${formatMinutes(consistency.summary.unjustifiedMin)} vs filas ${formatMinutes(consistency.unjustifiedMin)}`,
+    ],
+  };
+}
+
 export function auditEmployee(employee, processedRows = []) {
   const expectedMin = hoursToMinutes(employee.horasEsperadas);
   const recognizedMin = hoursToMinutes(
@@ -211,10 +296,17 @@ export function auditEmployee(employee, processedRows = []) {
   const unjustifiedMin = parseDurationToMinutes(employee.tiempoNoTrabajadoNoJustificado);
   const explainedMin = recognizedMin + justifiedMin + unjustifiedMin;
   const differenceMin = expectedMin - explainedMin;
-  const detalles = buildDailyAuditDetails(processedRows, differenceMin);
+  const consistency = buildProcessedRowsConsistency(processedRows, employee);
+  const detalles = [
+    ...(consistency.hasMismatch ? [buildConsistencyAuditDetail(consistency)] : []),
+    ...buildDailyAuditDetails(processedRows, differenceMin),
+  ];
   const requiereCapturaTiempo = detalles.some((detail) => detail.requiereCapturaTiempo);
+  const requiereConsistencia = consistency.hasMismatch;
   const status =
-    requiereCapturaTiempo
+    requiereConsistencia
+      ? 'Requiere revision - resumen no coincide con filas'
+      : requiereCapturaTiempo
       ? 'Requiere revision - capturar tiempo'
       : differenceMin === 0
       ? 'Cuadrado'
@@ -235,8 +327,9 @@ export function auditEmployee(employee, processedRows = []) {
     diferenciaMin: differenceMin,
     diferencia: formatMinutes(differenceMin),
     estadoCuadre: status,
-    requiereRevision: differenceMin !== 0 || requiereCapturaTiempo,
+    requiereRevision: differenceMin !== 0 || requiereCapturaTiempo || requiereConsistencia,
     requiereCapturaTiempo,
+    requiereConsistencia,
     detalles,
     posibleCausa:
       detalles[0]?.posibleFallo ??
@@ -642,6 +735,7 @@ function markEventualityDecision(
         }
       : current,
   );
+  let matchedDecisionRow = false;
   const processedRows = metadata.skipProcessedRows
     ? result.processedRows ?? []
     : (result.processedRows ?? []).map((row) => {
@@ -649,6 +743,8 @@ function markEventualityDecision(
           (item.filaAsistencia && String(row['#']) === String(item.filaAsistencia)) ||
           (String(row.CODIGO) === String(item.codigo) && String(row.FECHA) === String(item.fecha));
         if (!matchesRow) return row;
+        if (matchedDecisionRow) return row;
+        matchedDecisionRow = true;
         const currentBucket = item.appliedDecision ?? item.clasificacionActual ?? 'none';
         const targetBucket =
           appliedBucket ??
@@ -700,10 +796,13 @@ export function applyAuditAdjustment(result, employeeAudit, bucket, options = {}
   const detail = options.detail ?? null;
   const registersMissingTime = difference === 0 && Boolean(detail?.requiereCapturaTiempo);
   if ((!difference && !registersMissingTime) || !employeeAudit?.codigo) return result;
-  const requestedMinutes =
+  const rawRequestedMinutes =
     options.adjustmentMinutes == null
       ? Math.abs(difference)
       : Math.abs(Math.round(Number(options.adjustmentMinutes || 0)));
+  const requestedMinutes = registersMissingTime
+    ? rawRequestedMinutes
+    : Math.min(rawRequestedMinutes, Math.abs(difference));
   if (!requestedMinutes) return result;
 
   let adjustmentLabel = '';
