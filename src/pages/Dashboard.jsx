@@ -32,6 +32,7 @@ import { EVENTUALITY_FIELD_DEFINITIONS } from '../utils/eventualitiesReader.js';
 import { PAYROLL_FIELD_DEFINITIONS } from '../utils/payrollReader.js';
 import {
   applyAuditAdjustment,
+  applyAuditDetailEdit,
   excludeAuditDetailFromCalculation,
   applyEventualityAuditDecision,
   applyManualIrregularPunch,
@@ -274,6 +275,7 @@ export default function Dashboard({ activeUser, onLogout }) {
   const [restoredFromStorage, setRestoredFromStorage] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [auditFeedback, setAuditFeedback] = useState(null);
+  const [auditUndoStack, setAuditUndoStack] = useState([]);
   const [localDatabaseState, setLocalDatabaseState] = useState({
     supported: false,
     connected: false,
@@ -1006,6 +1008,14 @@ export default function Dashboard({ activeUser, onLogout }) {
           return current;
         }
         try {
+          setAuditUndoStack((stack) => [
+            {
+              result: current,
+              actionId,
+              savedAt: new Date().toISOString(),
+            },
+            ...stack,
+          ].slice(0, 10));
           const adjustedResult = updater(current);
           scheduleResultPersistence(adjustedResult);
           auditActionLockRef.current = false;
@@ -1059,6 +1069,29 @@ export default function Dashboard({ activeUser, onLogout }) {
     );
   }
 
+  function handleAuditDetailEdit(employeeAudit, detail, changes) {
+    executeAuditAction(
+      `edit:${employeeAudit.codigo}:${detail?.fila ?? detail?.fecha ?? 'registro'}`,
+      'Guardando correccion del registro...',
+      'Registro corregido y auditoria actualizada correctamente.',
+      (current) => applyAuditDetailEdit(current, employeeAudit, detail, changes),
+    );
+  }
+
+  function handleUndoLastAuditAction() {
+    setAuditUndoStack((stack) => {
+      const [lastSnapshot, ...remaining] = stack;
+      if (!lastSnapshot?.result) {
+        showAuditFeedback('error', 'No hay ajustes para deshacer.', 'undo');
+        return stack;
+      }
+      setResult(lastSnapshot.result);
+      scheduleResultPersistence(lastSnapshot.result);
+      showAuditFeedback('success', 'Ultimo ajuste deshecho correctamente.', 'undo');
+      return remaining;
+    });
+  }
+
   function handleEventualityDecision(item, decision, options) {
     const successMessages = {
       justified: 'Eventualidad pasada a justificado correctamente.',
@@ -1098,6 +1131,7 @@ export default function Dashboard({ activeUser, onLogout }) {
     setIsBusy(false);
     setRestoredFromStorage(false);
     setAuditFeedback(null);
+    setAuditUndoStack([]);
     persistenceVersionRef.current += 1;
     clearSavedResult();
     setActiveTab('upload');
@@ -1853,9 +1887,12 @@ export default function Dashboard({ activeUser, onLogout }) {
                 audit={result.audit}
                 disabled={isBusy || auditActionInProgress}
                 actionFeedback={auditFeedback}
+                canUndo={auditUndoStack.length > 0}
                 onAdjust={handleAuditAdjustment}
                 onAddIrregularPunch={handleManualIrregularPunch}
                 onExcludeDetail={handleExcludeAuditDetail}
+                onEditDetail={handleAuditDetailEdit}
+                onUndoLast={handleUndoLastAuditAction}
                 onEventualityDecision={handleEventualityDecision}
               />
             ) : null}

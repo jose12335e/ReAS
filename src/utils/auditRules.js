@@ -538,6 +538,10 @@ function subtractHours(value, minutes) {
   return minutesToHours(Math.max(0, hoursToMinutes(value) - Math.max(0, minutes)));
 }
 
+function addMinutesToHours(value, minutes) {
+  return minutesToHours(Math.max(0, hoursToMinutes(value) + Math.round(Number(minutes || 0))));
+}
+
 function decrement(value, amount = 1) {
   return Math.max(0, cleanNumber(value) - amount);
 }
@@ -562,6 +566,22 @@ function rowMatchesAuditDetail(row, employee, detail = null) {
   if (!detail) return true;
   if (detail.fila && String(row['#']) === String(detail.fila)) return true;
   return Boolean(detail.fecha && String(row.FECHA) === String(detail.fecha));
+}
+
+function normalizeDurationInput(value, fallback = '00:00:00') {
+  const raw = String(value ?? '').trim();
+  if (!raw) return fallback;
+  const minutes = parseDurationToMinutes(raw);
+  return formatMinutes(minutes);
+}
+
+function normalizeHourInput(value, fallback = '00:00:00') {
+  const raw = String(value ?? '').trim();
+  if (!raw) return fallback;
+  if (/^-?\d+([.,]\d+)?$/.test(raw)) {
+    return formatMinutes(Math.round(Number(raw.replace(',', '.')) * 60));
+  }
+  return normalizeDurationInput(raw, fallback);
 }
 
 function processedTimeField(bucket) {
@@ -917,6 +937,107 @@ export function applyAuditAdjustment(result, employeeAudit, bucket, options = {}
     ...result,
     summaryByEmployee,
     processedRows,
+  }, { affectedEmployee: employeeAudit });
+}
+
+export function applyAuditDetailEdit(result, employeeAudit, detail = {}, changes = {}) {
+  if (!employeeAudit?.codigo || !detail) return result;
+
+  const targetIndex = (result.processedRows ?? []).findIndex((row) =>
+    rowMatchesAuditDetail(row, employeeAudit, detail),
+  );
+  if (targetIndex < 0) {
+    throw new Error('No se encontro la fila original en la data procesada.');
+  }
+
+  const processedRows = [...(result.processedRows ?? [])];
+  const originalRow = processedRows[targetIndex];
+  const previousRecognizedMin = hoursToMinutes(originalRow['Horas trabajadas reconocidas']);
+  const previousJustifiedMin = parseDurationToMinutes(originalRow['Tiempo no trabajado justificado']);
+  const previousUnjustifiedMin = parseDurationToMinutes(originalRow['Tiempo no trabajado no justificado']);
+  const nextRecognizedDuration = normalizeHourInput(
+    changes.horasReconocidas,
+    formatMinutes(previousRecognizedMin),
+  );
+  const nextRecognizedMin = parseDurationToMinutes(nextRecognizedDuration);
+  const nextJustified = normalizeDurationInput(
+    changes.tiempoJustificado,
+    originalRow['Tiempo no trabajado justificado'] || '00:00:00',
+  );
+  const nextUnjustified = normalizeDurationInput(
+    changes.tiempoNoJustificado,
+    originalRow['Tiempo no trabajado no justificado'] || '00:00:00',
+  );
+  const nextJustifiedMin = parseDurationToMinutes(nextJustified);
+  const nextUnjustifiedMin = parseDurationToMinutes(nextUnjustified);
+  const recognizedDelta = nextRecognizedMin - previousRecognizedMin;
+  const justifiedDelta = nextJustifiedMin - previousJustifiedMin;
+  const unjustifiedDelta = nextUnjustifiedMin - previousUnjustifiedMin;
+  const scopeLabel = `fila ${detail.fila || '-'} ${detail.fecha || ''}`.trim();
+  const adjustmentLabel = `Fila editada desde auditoria (${scopeLabel})`;
+
+  const editedRow = {
+    ...originalRow,
+    'Hora entrada': String(changes.entrada ?? originalRow['Hora entrada'] ?? '').trim(),
+    'Hora salida': String(changes.salida ?? originalRow['Hora salida'] ?? '').trim(),
+    'Observaci\u00f3n original': String(
+      changes.observacion ?? originalRow['Observaci\u00f3n original'] ?? '',
+    ).trim(),
+    'Tiempo observaciones': String(
+      changes.tiempoObservaciones ?? originalRow['Tiempo observaciones'] ?? '',
+    ).trim(),
+    'Horas trabajadas reconocidas': minutesToHours(nextRecognizedMin),
+    'Tiempo no trabajado justificado': nextJustified,
+    'Tiempo no trabajado no justificado': nextUnjustified,
+    'Estado final': appendAuditText(
+      String(changes.estadoFinal ?? originalRow['Estado final'] ?? '').trim(),
+      adjustmentLabel,
+    ),
+    'Ajuste auditor\u00eda': appendAuditText(originalRow['Ajuste auditor\u00eda'], adjustmentLabel),
+  };
+  processedRows[targetIndex] = editedRow;
+
+  const summaryByEmployee = (result.summaryByEmployee ?? []).map((employee) => {
+    if (
+      String(employee.codigo) !== String(employeeAudit.codigo) ||
+      String(employee.ubicacion) !== String(employeeAudit.ubicacion)
+    ) {
+      return employee;
+    }
+    const next = {
+      ...employee,
+      horasReconocidas: addMinutesToHours(
+        employee.horasReconocidas ?? employee.horasTrabajadasReconocidas,
+        recognizedDelta,
+      ),
+      horasTrabajadasReconocidas: addMinutesToHours(
+        employee.horasTrabajadasReconocidas ?? employee.horasReconocidas,
+        recognizedDelta,
+      ),
+      tiempoNoTrabajadoJustificado: updateDuration(employee.tiempoNoTrabajadoJustificado, justifiedDelta),
+      tiempoNoTrabajadoNoJustificado: updateDuration(employee.tiempoNoTrabajadoNoJustificado, unjustifiedDelta),
+      observacionProcesada: appendAuditText(employee.observacionProcesada, adjustmentLabel),
+      estadoFinal: appendAuditText(employee.estadoFinal, 'Fila editada desde auditoria'),
+      ajusteCuadre: appendAuditText(employee.ajusteCuadre, adjustmentLabel),
+    };
+    next.tasaAusentismo = recalculateEmployeeAttendanceRate(next);
+    return next;
+  });
+
+  const events = Object.fromEntries(
+    Object.entries(result.events ?? {}).map(([key, rows]) => [
+      key,
+      Array.isArray(rows)
+        ? rows.map((row) => (rowMatchesAuditDetail(row, employeeAudit, detail) ? { ...row, ...editedRow } : row))
+        : rows,
+    ]),
+  );
+
+  return recalculateAuditAndSummaries({
+    ...result,
+    summaryByEmployee,
+    processedRows,
+    events,
   }, { affectedEmployee: employeeAudit });
 }
 

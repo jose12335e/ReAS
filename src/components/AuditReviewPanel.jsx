@@ -9,9 +9,12 @@ import {
   Loader2,
   MapPin,
   PencilLine,
+  RotateCcw,
+  Save,
   ShieldAlert,
   Trash2,
   UserRound,
+  X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { formatMinutes, parseDurationToMinutes } from '../utils/auditRules.js';
@@ -52,6 +55,13 @@ function detailKey(employee, detail) {
 function fieldValue(detail, field, fallback = 'vacio') {
   const value = detail?.[field];
   return value == null || value === '' ? fallback : value;
+}
+
+function editableFieldValue(detail, field) {
+  const value = detail?.[field];
+  if (value == null) return '';
+  const text = String(value);
+  return /^vac/i.test(text) ? '' : text;
 }
 
 function MetricPill({ label, value, tone = 'slate' }) {
@@ -300,7 +310,19 @@ function DetailCard({
   onApply,
   onAddIrregularPunch,
   onExcludeDetail,
+  onEditDetail,
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValues, setEditValues] = useState(() => ({
+    entrada: editableFieldValue(detail, 'entrada'),
+    salida: editableFieldValue(detail, 'salida'),
+    observacion: editableFieldValue(detail, 'observacion'),
+    tiempoObservaciones: editableFieldValue(detail, 'tiempoObservaciones'),
+    horasReconocidas: editableFieldValue(detail, 'horasReconocidas') || '00:00:00',
+    tiempoJustificado: editableFieldValue(detail, 'tiempoJustificado') || '00:00:00',
+    tiempoNoJustificado: editableFieldValue(detail, 'tiempoNoJustificado') || '00:00:00',
+    estadoFinal: editableFieldValue(detail, 'estadoFinal'),
+  }));
   const differenceMin = Number(detail?.diferenciaMin || employee.diferenciaMin || 0);
   const isMissing = differenceMin > 0;
   const requiresTimeEntry = Boolean(detail?.requiereCapturaTiempo);
@@ -313,6 +335,10 @@ function DetailCard({
   const canApplyJustified = requiresTimeEntry || isMissing || justifiedAvailable > 0;
   const canApplyUnjustified = requiresTimeEntry || isMissing || unjustifiedAvailable > 0;
   const scopeLabel = `fila ${detail?.fila || '-'} ${detail?.fecha || ''}`.trim();
+
+  function updateEditValue(field, value) {
+    setEditValues((current) => ({ ...current, [field]: value }));
+  }
 
   return (
     <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -378,7 +404,98 @@ function DetailCard({
         <MetricPill label="Explicado" value={detail?.totalCalculado || '00:00:00'} tone="navy" />
       </div>
 
+      {isEditing ? (
+        <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50/70 p-4">
+          <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-slate-950">Editar registro de auditoria</div>
+              <p className="text-xs leading-5 text-slate-600">
+                Corrige la data visible y los tiempos calculados de esta fila. El sistema recalcula el empleado y
+                conserva trazabilidad del ajuste.
+              </p>
+            </div>
+            <button
+              className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+              type="button"
+              onClick={() => setIsEditing(false)}
+            >
+              <X className="h-3.5 w-3.5" />
+              Cerrar
+            </button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              ['entrada', 'Hora entrada'],
+              ['salida', 'Hora salida'],
+              ['tiempoObservaciones', 'Tiempo obs.'],
+              ['horasReconocidas', 'Horas reconocidas'],
+              ['tiempoJustificado', 'Tiempo justificado'],
+              ['tiempoNoJustificado', 'Tiempo no justificado'],
+            ].map(([field, label]) => (
+              <label key={field} className="grid gap-1 text-xs font-semibold uppercase text-slate-500">
+                {label}
+                <input
+                  className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-950 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100"
+                  value={editValues[field]}
+                  disabled={disabled}
+                  placeholder={field.includes('tiempo') || field.includes('horas') ? 'HH:MM:SS' : ''}
+                  onChange={(event) => updateEditValue(field, event.target.value)}
+                />
+              </label>
+            ))}
+            <label className="grid gap-1 text-xs font-semibold uppercase text-slate-500 xl:col-span-2">
+              Observacion
+              <input
+                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-950 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100"
+                value={editValues.observacion}
+                disabled={disabled}
+                onChange={(event) => updateEditValue('observacion', event.target.value)}
+              />
+            </label>
+            <label className="grid gap-1 text-xs font-semibold uppercase text-slate-500 xl:col-span-2">
+              Estado final
+              <input
+                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-950 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100"
+                value={editValues.estadoFinal}
+                disabled={disabled}
+                onChange={(event) => updateEditValue('estadoFinal', event.target.value)}
+              />
+            </label>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              type="button"
+              disabled={disabled}
+              onClick={() => {
+                onEditDetail(employee, detail, editValues);
+                setIsEditing(false);
+              }}
+            >
+              <Save className="h-3.5 w-3.5" />
+              Guardar correccion
+            </button>
+            <button
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              type="button"
+              onClick={() => setIsEditing(false)}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+          type="button"
+          disabled={disabled || isReadOnly}
+          onClick={() => setIsEditing((current) => !current)}
+        >
+          <PencilLine className="h-3.5 w-3.5" />
+          Editar registro
+        </button>
         <AdjustmentButton
           tone="amber"
           disabled={disabled || isReadOnly}
@@ -431,7 +548,15 @@ function DetailCard({
   );
 }
 
-function EmployeeAuditCard({ row, index, disabled, onAdjust, onAddIrregularPunch, onExcludeDetail }) {
+function EmployeeAuditCard({
+  row,
+  index,
+  disabled,
+  onAdjust,
+  onAddIrregularPunch,
+  onExcludeDetail,
+  onEditDetail,
+}) {
   const [expanded, setExpanded] = useState(index === 0);
   const [manualTimes, setManualTimes] = useState({});
   const isMissing = row.diferenciaMin > 0;
@@ -547,6 +672,7 @@ function EmployeeAuditCard({ row, index, disabled, onAdjust, onAddIrregularPunch
                     onApply={(bucket, options) => onAdjust(row, bucket, options)}
                     onAddIrregularPunch={onAddIrregularPunch}
                     onExcludeDetail={onExcludeDetail}
+                    onEditDetail={onEditDetail}
                   />
                 );
               })}
@@ -566,9 +692,12 @@ export default function AuditReviewPanel({
   audit,
   disabled,
   actionFeedback,
+  canUndo,
   onAdjust,
   onAddIrregularPunch,
   onExcludeDetail,
+  onEditDetail,
+  onUndoLast,
   onEventualityDecision,
 }) {
   const pending = useMemo(() => audit?.pendingEmployees ?? [], [audit]);
@@ -607,7 +736,7 @@ export default function AuditReviewPanel({
             empleado y los dias que probablemente causan la diferencia.
           </p>
         </div>
-        <div className="grid gap-2 text-sm sm:grid-cols-3 lg:min-w-[420px]">
+        <div className="grid gap-2 text-sm sm:grid-cols-3 lg:min-w-[520px]">
           <MetricPill
             label="Empleados"
             value={`${audit.general.empleadosCuadrados}/${audit.general.totalEmpleados} cuadrados`}
@@ -618,6 +747,15 @@ export default function AuditReviewPanel({
             value={audit.hasDiscrepancies ? 'Requiere revisión' : audit.general.estadoCuadre}
             tone={audit.hasDiscrepancies ? 'amber' : 'green'}
           />
+          <button
+            className="inline-flex h-full min-h-12 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-3"
+            type="button"
+            disabled={disabled || !canUndo}
+            onClick={onUndoLast}
+          >
+            <RotateCcw className="h-4 w-4" />
+            Deshacer ultimo ajuste
+          </button>
         </div>
       </div>
 
@@ -645,6 +783,7 @@ export default function AuditReviewPanel({
               onAdjust={onAdjust}
               onAddIrregularPunch={onAddIrregularPunch}
               onExcludeDetail={onExcludeDetail}
+              onEditDetail={onEditDetail}
             />
           ))}
         </div>
