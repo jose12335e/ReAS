@@ -137,6 +137,11 @@ function ProgressBar({ progress, status }) {
   );
 }
 
+function formatStoredRowCount(value) {
+  const count = Number(value ?? 0);
+  return Number.isFinite(count) ? count.toLocaleString('es-DO') : '0';
+}
+
 function TabButton({ icon: Icon, label, description, active, disabled, onClick }) {
   return (
     <button
@@ -452,6 +457,20 @@ export default function Dashboard({ activeUser, onLogout }) {
       }
     };
 
+    worker.onerror = (event) => {
+      setErrors([event?.message || 'El procesador del archivo se detuvo. Recarga la pagina e intenta nuevamente.']);
+      setIsBusy(false);
+      setStatus('');
+    };
+
+    worker.onmessageerror = () => {
+      setErrors([
+        'No se pudo comunicar el resultado del procesador. El archivo puede contener datos demasiado complejos o no compatibles.',
+      ]);
+      setIsBusy(false);
+      setStatus('');
+    };
+
     return () => worker.terminate();
   }, [clearSavedResult, setLastResult, setMapping]);
 
@@ -576,6 +595,7 @@ export default function Dashboard({ activeUser, onLogout }) {
 
   async function handlePrimaryFile(file) {
     if (!file) return;
+    try {
     const fileValidation = validateFileForUpload(file, { required: true, label: 'Excel principal' });
     setFileWarnings(fileValidation.warnings);
     if (!fileValidation.isValid) {
@@ -596,7 +616,15 @@ export default function Dashboard({ activeUser, onLogout }) {
     setProgress(0);
     setStatus('Preparando lectura del archivo');
     const arrayBuffer = await file.arrayBuffer();
-    workerRef.current?.postMessage({ type: 'preview', payload: { arrayBuffer } }, [arrayBuffer]);
+    if (!workerRef.current) {
+      throw new Error('El procesador del archivo no esta disponible. Recarga la pagina e intenta nuevamente.');
+    }
+    workerRef.current.postMessage({ type: 'preview', payload: { arrayBuffer } }, [arrayBuffer]);
+    } catch (error) {
+      setErrors([error?.message || 'No se pudo abrir el Excel principal.']);
+      setIsBusy(false);
+      setStatus('');
+    }
   }
 
   async function handlePrimarySheetChange(sheetName) {
@@ -1808,7 +1836,7 @@ export default function Dashboard({ activeUser, onLogout }) {
           <section className="space-y-5">
             {restoredFromStorage && lastSession && result ? (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900">
-                Resultado recuperado del almacenamiento local: {lastSession.processedRows.toLocaleString()} fila(s)
+                Resultado recuperado del almacenamiento local: {formatStoredRowCount(lastSession.processedRows)} fila(s)
                 procesada(s).
               </div>
             ) : null}
