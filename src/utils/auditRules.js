@@ -260,9 +260,10 @@ export function auditResult(result) {
     auditEmployee(employee, processedRowsByEmployee.get(employeeKey(employee)) ?? []),
   );
   const pendingEmployees = employeeAudits.filter((row) => row.requiereRevision);
-  const general = buildGeneralAudit(employeeAudits);
+  const generalBase = buildGeneralAudit(employeeAudits);
   const eventuality = refreshEventualityReconciliation(result?.eventualityAudit);
   const hasEventualityDifferences = Boolean(eventuality.enabled && eventuality.pendingItems.length);
+  const general = applyGeneralAuditStatus(generalBase, pendingEmployees, hasEventualityDifferences);
 
   return {
     employeeAudits,
@@ -308,6 +309,22 @@ function buildGeneralAudit(employeeAudits = []) {
     diferencia: formatMinutes(totals.diferenciaMin),
     estadoCuadre: totals.diferenciaMin === 0 ? 'Cuadrado' : 'Requiere revisión',
   };
+}
+
+function applyGeneralAuditStatus(general, pendingEmployees = [], hasEventualityDifferences = false) {
+  if (general.diferenciaMin !== 0) {
+    return { ...general, estadoCuadre: 'Requiere revisión' };
+  }
+  if (pendingEmployees.length > 0 && hasEventualityDifferences) {
+    return { ...general, estadoCuadre: 'Cuadrado con alertas de empleados y eventualidades' };
+  }
+  if (pendingEmployees.length > 0) {
+    return { ...general, estadoCuadre: 'Cuadrado con empleados pendientes' };
+  }
+  if (hasEventualityDifferences) {
+    return { ...general, estadoCuadre: 'Cuadrado con eventualidades pendientes' };
+  }
+  return { ...general, estadoCuadre: 'Cuadrado' };
 }
 
 function aggregateRows(rows, base = {}) {
@@ -373,9 +390,10 @@ function incrementalAuditResult(result, affectedEmployee) {
     (audit) => replacements.get(employeeKey(audit)) ?? audit,
   );
   const pendingEmployees = employeeAudits.filter((row) => row.requiereRevision);
-  const general = buildGeneralAudit(employeeAudits);
+  const generalBase = buildGeneralAudit(employeeAudits);
   const eventuality = refreshEventualityReconciliation(result.eventualityAudit);
   const hasEventualityDifferences = Boolean(eventuality.enabled && eventuality.pendingItems.length);
+  const general = applyGeneralAuditStatus(generalBase, pendingEmployees, hasEventualityDifferences);
 
   return {
     employeeAudits,
@@ -413,6 +431,10 @@ export function recalculateAuditAndSummaries(result, options = {}) {
 
 function updateDuration(value, deltaMinutes) {
   return formatMinutes(parseDurationToMinutes(value) + deltaMinutes);
+}
+
+function updateDurationClamped(value, deltaMinutes) {
+  return formatMinutes(Math.max(0, parseDurationToMinutes(value) + deltaMinutes));
 }
 
 function subtractDuration(value, minutes) {
@@ -455,13 +477,32 @@ function processedTimeField(bucket) {
     : 'Tiempo no trabajado no justificado';
 }
 
-function updateProcessedRowDuration(row, bucket, deltaMinutes) {
+function processedEventTimeField(type, bucket) {
+  const justified = bucket === 'justified';
+  if (type === 'tardanza') {
+    return justified ? 'Tiempo tardanza justificada' : 'Tiempo tardanza no justificada';
+  }
+  if (type === 'salida_temprana') {
+    return justified ? 'Tiempo salida temprana justificada' : 'Tiempo salida temprana no justificada';
+  }
+  if (type === 'ausencia') {
+    return justified ? 'Tiempo ausencia justificada' : 'Tiempo ausencia no justificada';
+  }
+  return null;
+}
+
+function updateProcessedRowDuration(row, bucket, deltaMinutes, type = '') {
   if (!['justified', 'unjustified'].includes(bucket) || !deltaMinutes) return row;
   const field = processedTimeField(bucket);
-  return {
+  const eventField = processedEventTimeField(type, bucket);
+  const nextRow = {
     ...row,
-    [field]: updateDuration(row[field], deltaMinutes),
+    [field]: updateDurationClamped(row[field], deltaMinutes),
   };
+  if (eventField) {
+    nextRow[eventField] = updateDurationClamped(row[eventField], deltaMinutes);
+  }
+  return nextRow;
 }
 
 function decrementIfMatch(value, pattern, state, amount = 1) {
@@ -620,15 +661,16 @@ function markEventualityDecision(
           0,
           Math.round(Number(item.appliedMinutes ?? item.tiempoClasificadoActualMin ?? 0)),
         );
+        const eventType = item.tipoExterno || item.tiposAsistencia?.[0] || '';
         let adjustedRow = row;
         if (decision !== 'confirm') {
           if (['justified', 'unjustified'].includes(currentBucket) && currentMinutes > 0) {
             const field = processedTimeField(currentBucket);
             const removable = Math.min(currentMinutes, parseDurationToMinutes(adjustedRow[field]));
-            adjustedRow = updateProcessedRowDuration(adjustedRow, currentBucket, -removable);
+            adjustedRow = updateProcessedRowDuration(adjustedRow, currentBucket, -removable, eventType);
           }
           if (['justified', 'unjustified'].includes(targetBucket) && minutes > 0) {
-            adjustedRow = updateProcessedRowDuration(adjustedRow, targetBucket, minutes);
+            adjustedRow = updateProcessedRowDuration(adjustedRow, targetBucket, minutes, eventType);
           }
         }
         return {
@@ -1254,13 +1296,12 @@ export function applyAutomaticEventualityDecisions(result) {
     nextResult = applyEventualityAuditDecisionCore(nextResult, item, decision, {
       minutes: item.tiempoSugeridoMin,
       automatic: true,
-      skipProcessedRows: true,
     });
     automaticCount += 1;
   });
 
   if (!automaticCount) return recalculateAuditAndSummaries(result);
-  const automaticItems = nextResult.eventualityAudit.items.filter((item) => item.automatic);
+  const automaticItems = [];
   const automaticByRow = new Map();
   automaticItems.forEach((item) => {
     const key = item.filaAsistencia

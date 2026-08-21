@@ -669,13 +669,29 @@ function durationStringToExcelDuration(value) {
   return minutesToExcelDuration(parseDuration(value));
 }
 
+function asNumeric(value = 0) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const normalized = String(value ?? '').replace('%', '').replace(',', '.').trim();
+  const numeric = Number(normalized);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function table6AbsenceRate(employee) {
+  const expected = asNumeric(employee.horasEsperadas);
+  const recognized = asNumeric(employee.horasReconocidas ?? employee.horasTrabajadasReconocidas);
+  if (expected > 0) {
+    return Math.max(0, 1 - recognized / expected) * 100;
+  }
+  return asNumeric(employee.tasaAusentismo);
+}
+
 function table6Priority(employee) {
-  return Number(employee.tasaAusentismo || 0);
+  return table6AbsenceRate(employee);
 }
 
 function table6TieBreaker(employee) {
-  const expected = Number(employee.horasEsperadas || 0);
-  const recognized = Number(employee.horasReconocidas ?? employee.horasTrabajadasReconocidas ?? 0);
+  const expected = asNumeric(employee.horasEsperadas);
+  const recognized = asNumeric(employee.horasReconocidas ?? employee.horasTrabajadasReconocidas);
   return Math.max(0, expected - recognized);
 }
 
@@ -1341,22 +1357,25 @@ function addHoursVsWorkedSheet(workbook, employees, reportOptions = {}, options 
         rowNumber += 1;
         pagination.addRows(1);
       }
+      const expectedHours = asNumeric(employee.horasEsperadas);
+      const recognizedHours = asNumeric(employee.horasReconocidas ?? employee.horasTrabajadasReconocidas);
       const dayRate = employee.diasATrabajar > 0 ? employee.diasTrabajadosCompletos / employee.diasATrabajar : 0;
-      const hourRate = employee.horasEsperadas > 0 ? employee.horasReconocidas / employee.horasEsperadas : 0;
+      const hourRate = expectedHours > 0 ? recognizedHours / expectedHours : 0;
+      const absenceRate = table6AbsenceRate(employee) / 100;
       totals.diasATrabajar += Number(employee.diasATrabajar || 0);
       totals.diasTrabajados += Number(employee.diasTrabajadosCompletos || 0);
-      totals.horasEsperadas += Number(employee.horasEsperadas || 0);
-      totals.horasReconocidas += Number(employee.horasReconocidas || 0);
+      totals.horasEsperadas += expectedHours;
+      totals.horasReconocidas += recognizedHours;
 
       worksheet.getRow(rowNumber).values = [
         collaboratorName(employee),
         employee.diasATrabajar,
         employee.diasTrabajadosCompletos,
         dayRate,
-        hoursToExcelDuration(employee.horasEsperadas),
-        hoursToExcelDuration(employee.horasReconocidas),
+        hoursToExcelDuration(expectedHours),
+        hoursToExcelDuration(recognizedHours),
         hourRate,
-        employee.tasaAusentismo / 100,
+        absenceRate,
       ];
       worksheet.getCell(rowNumber, 4).numFmt = '0%';
       worksheet.getCell(rowNumber, 5).numFmt = TIME_FORMAT;
@@ -1409,22 +1428,25 @@ function addHoursVsWorkedSheet(workbook, employees, reportOptions = {}, options 
 }
 
 function writeTable6EmployeeRow(worksheet, rowNumber, employee, totals) {
+  const expectedHours = asNumeric(employee.horasEsperadas);
+  const recognizedHours = asNumeric(employee.horasReconocidas ?? employee.horasTrabajadasReconocidas);
   const dayRate = employee.diasATrabajar > 0 ? employee.diasTrabajadosCompletos / employee.diasATrabajar : 0;
-  const hourRate = employee.horasEsperadas > 0 ? employee.horasReconocidas / employee.horasEsperadas : 0;
+  const hourRate = expectedHours > 0 ? recognizedHours / expectedHours : 0;
+  const absenceRate = table6AbsenceRate(employee) / 100;
   totals.diasATrabajar += Number(employee.diasATrabajar || 0);
   totals.diasTrabajados += Number(employee.diasTrabajadosCompletos || 0);
-  totals.horasEsperadas += Number(employee.horasEsperadas || 0);
-  totals.horasReconocidas += Number(employee.horasReconocidas || 0);
+  totals.horasEsperadas += expectedHours;
+  totals.horasReconocidas += recognizedHours;
 
   worksheet.getRow(rowNumber).values = [
     collaboratorName(employee),
     employee.diasATrabajar,
     employee.diasTrabajadosCompletos,
     dayRate,
-    hoursToExcelDuration(employee.horasEsperadas),
-    hoursToExcelDuration(employee.horasReconocidas),
+    hoursToExcelDuration(expectedHours),
+    hoursToExcelDuration(recognizedHours),
     hourRate,
-    employee.tasaAusentismo / 100,
+    absenceRate,
   ];
   worksheet.getCell(rowNumber, 4).numFmt = '0%';
   worksheet.getCell(rowNumber, 5).numFmt = TIME_FORMAT;
