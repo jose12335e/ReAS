@@ -3,13 +3,16 @@ import {
   BarChart3,
   CalendarDays,
   CheckCircle2,
+  Database,
   FileCheck2,
   FilePlus2,
   FileText,
+  FolderOpen,
   HardDrive,
   Loader2,
   LogOut,
   Play,
+  Save,
   Settings,
   ShieldCheck,
   UserCheck,
@@ -44,6 +47,17 @@ import {
   loadReportSession,
   saveReportSession,
 } from '../utils/reportSessionStorage.js';
+import {
+  clearLocalDatabaseHandle,
+  initializeLocalDatabase,
+  isLocalDatabaseSupported,
+  listLocalReports,
+  loadLocalDatabaseHandle,
+  loadLocalReport,
+  pickLocalDatabaseDirectory,
+  saveLocalReport,
+  verifyDirectoryPermission,
+} from '../utils/localDatabase.js';
 
 const AuditReviewPanel = lazy(() => import('../components/AuditReviewPanel.jsx'));
 const DashboardOverview = lazy(() => import('../components/DashboardOverview.jsx'));
@@ -233,6 +247,7 @@ export default function Dashboard({ activeUser, onLogout }) {
   const auxiliaryPreviewRequestRef = useRef({ extended: 0, payroll: 0, eventualities: 0 });
   const feedbackTimerRef = useRef(null);
   const auditActionLockRef = useRef(false);
+  const localDatabaseHandleRef = useRef(null);
   const [primaryFile, setPrimaryFile] = useState(null);
   const [secondaryFiles, setSecondaryFiles] = useState([]);
   const [payrollFile, setPayrollFile] = useState(null);
@@ -254,6 +269,17 @@ export default function Dashboard({ activeUser, onLogout }) {
   const [restoredFromStorage, setRestoredFromStorage] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [auditFeedback, setAuditFeedback] = useState(null);
+  const [localDatabaseState, setLocalDatabaseState] = useState({
+    supported: false,
+    connected: false,
+    name: '',
+    reports: [],
+    selectedReportId: '',
+    status: '',
+    error: '',
+    busy: false,
+    lastSavedAt: null,
+  });
 
   const {
     defaultScheduleType,
@@ -300,6 +326,29 @@ export default function Dashboard({ activeUser, onLogout }) {
     const metadata = await saveReportSession(nextResult);
     setLastResult(nextResult);
     setLastSession(metadata ?? buildReportSessionMetadata(nextResult));
+    if (localDatabaseHandleRef.current) {
+      saveLocalReport(localDatabaseHandleRef.current, nextResult, {
+        dghCode,
+        exportFilename,
+        user: activeUser,
+      })
+        .then((entry) => {
+          setLocalDatabaseState((current) => ({
+            ...current,
+            reports: [entry, ...current.reports.filter((report) => report.id !== entry.id)],
+            selectedReportId: entry.id,
+            status: `Guardado en base local: ${entry.month}`,
+            error: '',
+            lastSavedAt: entry.savedAt,
+          }));
+        })
+        .catch((error) => {
+          setLocalDatabaseState((current) => ({
+            ...current,
+            error: error?.message || 'No se pudo guardar en la base local.',
+          }));
+        });
+    }
     return metadata;
   }
 
@@ -384,7 +433,7 @@ export default function Dashboard({ activeUser, onLogout }) {
           setLastResult(payload);
         } catch (storageError) {
           setErrors([
-            'El reporte fue procesado y ya puedes descargarlo. No se pudo guardar la sesión completa en localStorage por límite del navegador.',
+            'El reporte fue procesado y ya puedes descargarlo. No se pudo guardar la sesión completa en el almacenamiento local del navegador.',
           ]);
         }
       }
@@ -413,6 +462,48 @@ export default function Dashboard({ activeUser, onLogout }) {
     },
     [],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    const supported = isLocalDatabaseSupported();
+    setLocalDatabaseState((current) => ({ ...current, supported }));
+    if (!supported) return undefined;
+
+    loadLocalDatabaseHandle()
+      .then(async (handle) => {
+        if (cancelled || !handle) return;
+        const hasPermission = await verifyDirectoryPermission(handle, false);
+        if (!hasPermission) {
+          setLocalDatabaseState((current) => ({
+            ...current,
+            supported: true,
+            connected: false,
+            name: handle.name,
+            status: 'Carpeta recordada. Pulsa Base local para reconectar permisos.',
+          }));
+          return;
+        }
+        await initializeLocalDatabase(handle);
+        localDatabaseHandleRef.current = handle;
+        const reports = await listLocalReports(handle);
+        if (cancelled) return;
+        setLocalDatabaseState((current) => ({
+          ...current,
+          supported: true,
+          connected: true,
+          name: handle.name,
+          reports,
+          selectedReportId: reports[0]?.id ?? current.selectedReportId,
+          status: 'Base local conectada.',
+          error: '',
+        }));
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     clearExpiredSession();
@@ -959,7 +1050,7 @@ export default function Dashboard({ activeUser, onLogout }) {
   function handleNewReport() {
     if (
       result &&
-      !window.confirm('Esto limpiará el reporte actual y la sesión guardada en localStorage. ¿Deseas continuar?')
+      !window.confirm('Esto limpiará el reporte actual y la sesión guardada en este navegador. ¿Deseas continuar?')
     ) {
       return;
     }
@@ -988,7 +1079,7 @@ export default function Dashboard({ activeUser, onLogout }) {
     if (
       !nextValue &&
       lastResult &&
-      !window.confirm('Desactivar Guardar sesión borrará la copia guardada en localStorage. El reporte abierto seguirá en pantalla hasta que cierres o limpies. ¿Deseas continuar?')
+      !window.confirm('Desactivar Guardar sesión borrará la copia guardada en este navegador. El reporte abierto seguirá en pantalla hasta que cierres o limpies. ¿Deseas continuar?')
     ) {
       return;
     }
@@ -997,6 +1088,138 @@ export default function Dashboard({ activeUser, onLogout }) {
       setRestoredFromStorage(false);
       clearReportSession().catch(() => {});
     }
+  }
+
+  async function refreshLocalDatabaseReports(handle = localDatabaseHandleRef.current) {
+    if (!handle) return [];
+    const reports = await listLocalReports(handle);
+    setLocalDatabaseState((current) => ({
+      ...current,
+      reports,
+      selectedReportId:
+        current.selectedReportId && reports.some((report) => report.id === current.selectedReportId)
+          ? current.selectedReportId
+          : reports[0]?.id ?? '',
+    }));
+    return reports;
+  }
+
+  async function handleChooseLocalDatabase() {
+    if (!isLocalDatabaseSupported()) {
+      setLocalDatabaseState((current) => ({
+        ...current,
+        supported: false,
+        error: 'La base local con carpeta requiere Chrome o Edge actualizado.',
+      }));
+      return;
+    }
+
+    setLocalDatabaseState((current) => ({ ...current, busy: true, error: '', status: 'Seleccionando carpeta...' }));
+    try {
+      const handle = await pickLocalDatabaseDirectory();
+      localDatabaseHandleRef.current = handle;
+      const reports = await listLocalReports(handle);
+      setLocalDatabaseState((current) => ({
+        ...current,
+        supported: true,
+        connected: true,
+        name: handle.name,
+        reports,
+        selectedReportId: reports[0]?.id ?? current.selectedReportId,
+        status: 'Base local conectada.',
+        error: '',
+        busy: false,
+      }));
+      if (result) {
+        await saveLocalReport(handle, result, { dghCode, exportFilename, user: activeUser });
+        await refreshLocalDatabaseReports(handle);
+      }
+    } catch (error) {
+      setLocalDatabaseState((current) => ({
+        ...current,
+        busy: false,
+        error: error?.message || 'No se pudo conectar la base local.',
+      }));
+    }
+  }
+
+  async function handleSaveCurrentToLocalDatabase() {
+    if (!result) return;
+    let handle = localDatabaseHandleRef.current;
+    if (!handle) {
+      await handleChooseLocalDatabase();
+      handle = localDatabaseHandleRef.current;
+      if (!handle) return;
+    }
+
+    setLocalDatabaseState((current) => ({ ...current, busy: true, error: '', status: 'Guardando reporte...' }));
+    try {
+      const entry = await saveLocalReport(handle, result, { dghCode, exportFilename, user: activeUser });
+      await refreshLocalDatabaseReports(handle);
+      setLocalDatabaseState((current) => ({
+        ...current,
+        busy: false,
+        selectedReportId: entry.id,
+        status: `Reporte guardado: ${entry.month}`,
+        error: '',
+        lastSavedAt: entry.savedAt,
+      }));
+    } catch (error) {
+      setLocalDatabaseState((current) => ({
+        ...current,
+        busy: false,
+        error: error?.message || 'No se pudo guardar el reporte en la base local.',
+      }));
+    }
+  }
+
+  async function handleLoadFromLocalDatabase() {
+    const handle = localDatabaseHandleRef.current;
+    const reportId = localDatabaseState.selectedReportId;
+    if (!handle || !reportId) return;
+    if (
+      result &&
+      !window.confirm('Cargar este reporte reemplazara el reporte abierto en pantalla. Deseas continuar?')
+    ) {
+      return;
+    }
+
+    setLocalDatabaseState((current) => ({ ...current, busy: true, error: '', status: 'Cargando reporte...' }));
+    try {
+      const record = await loadLocalReport(handle, reportId);
+      setResult(record.result);
+      setLastResult(record.result);
+      setLastSession(buildReportSessionMetadata(record.result));
+      setRestoredFromStorage(true);
+      setActiveTab('dashboard');
+      setLocalDatabaseState((current) => ({
+        ...current,
+        busy: false,
+        status: `Reporte cargado: ${record.entry?.month ?? 'sin mes'}`,
+        error: '',
+      }));
+    } catch (error) {
+      setLocalDatabaseState((current) => ({
+        ...current,
+        busy: false,
+        error: error?.message || 'No se pudo cargar el reporte seleccionado.',
+      }));
+    }
+  }
+
+  function handleDisconnectLocalDatabase() {
+    localDatabaseHandleRef.current = null;
+    clearLocalDatabaseHandle().catch(() => {});
+    setLocalDatabaseState((current) => ({
+      ...current,
+      connected: false,
+      name: '',
+      reports: [],
+      selectedReportId: '',
+      status: 'Base local desconectada.',
+      error: '',
+      lastSavedAt: null,
+    }));
   }
 
   const hasPendingAudit = Boolean(result?.audit?.hasDiscrepancies);
@@ -1208,6 +1431,15 @@ export default function Dashboard({ activeUser, onLogout }) {
           >
             <HardDrive className="h-3.5 w-3.5" />
             {saveSession ? 'Guardando' : 'No guardar'}
+          </button>
+          <button
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-800 shadow-sm transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+            type="button"
+            disabled={isBusy || localDatabaseState.busy}
+            onClick={handleChooseLocalDatabase}
+          >
+            <Database className="h-3.5 w-3.5" />
+            Base local
           </button>
         </div>
       </div>
@@ -1427,7 +1659,7 @@ export default function Dashboard({ activeUser, onLogout }) {
               <span>
                 {saveSession
                   ? `Privacidad: este equipo conserva la última sesión por ${SESSION_TTL_HOURS} horas. Usa “Nuevo / limpiar sesión” al terminar si el equipo es compartido.`
-                  : 'Privacidad: el reporte actual no se guardará en localStorage. Si recargas o cierras la página, tendrás que procesarlo de nuevo.'}
+                  : 'Privacidad: el reporte actual no se guardará en este navegador. Si recargas o cierras la página, tendrás que procesarlo de nuevo.'}
               </span>
             </div>
             {lastSession?.savedAt && saveSession ? (
@@ -1435,6 +1667,115 @@ export default function Dashboard({ activeUser, onLogout }) {
                 Sesión guardada: {new Date(lastSession.savedAt).toLocaleString('es-DO')}
               </span>
             ) : null}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 text-sm shadow-sm shadow-slate-200/70">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <span
+                className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${
+                  localDatabaseState.connected
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'bg-slate-100 text-slate-500'
+                }`}
+              >
+                <Database className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <div className="text-xs font-semibold uppercase text-slate-500">
+                  Base de datos local
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-950">
+                  {localDatabaseState.connected
+                    ? localDatabaseState.name
+                    : localDatabaseState.supported
+                      ? 'Sin carpeta conectada'
+                      : 'No disponible en este navegador'}
+                </div>
+                <div className="mt-1 text-xs font-medium text-slate-500">
+                  {localDatabaseState.connected
+                    ? `${localDatabaseState.reports.length} reporte(s) guardado(s) en la carpeta seleccionada.`
+                    : 'Puedes usar una carpeta de la PC, USB o disco externo para conservar reportes sin duplicarlos.'}
+                </div>
+                {localDatabaseState.status ? (
+                  <div className="mt-2 text-xs font-semibold text-emerald-700">
+                    {localDatabaseState.status}
+                  </div>
+                ) : null}
+                {localDatabaseState.error ? (
+                  <div className="mt-2 text-xs font-semibold text-rose-700">
+                    {localDatabaseState.error}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="grid gap-2 lg:min-w-[560px] lg:grid-cols-[1fr_auto_auto_auto]">
+              <select
+                className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                value={localDatabaseState.selectedReportId}
+                disabled={!localDatabaseState.connected || !localDatabaseState.reports.length || localDatabaseState.busy}
+                onChange={(event) =>
+                  setLocalDatabaseState((current) => ({
+                    ...current,
+                    selectedReportId: event.target.value,
+                  }))
+                }
+              >
+                {localDatabaseState.reports.length ? (
+                  localDatabaseState.reports.map((report) => (
+                    <option key={report.id} value={report.id}>
+                      {report.month} - {report.dghCode || report.title} -{' '}
+                      {new Date(report.savedAt).toLocaleString('es-DO')}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">Sin reportes guardados</option>
+                )}
+              </select>
+              <button
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-800 shadow-sm transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
+                disabled={isBusy || localDatabaseState.busy || !localDatabaseState.supported}
+                onClick={handleChooseLocalDatabase}
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+                Elegir
+              </button>
+              <button
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
+                disabled={isBusy || localDatabaseState.busy || !result}
+                onClick={handleSaveCurrentToLocalDatabase}
+              >
+                <Save className="h-3.5 w-3.5" />
+                Guardar
+              </button>
+              <button
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-950 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
+                disabled={
+                  isBusy ||
+                  localDatabaseState.busy ||
+                  !localDatabaseState.connected ||
+                  !localDatabaseState.selectedReportId
+                }
+                onClick={handleLoadFromLocalDatabase}
+              >
+                Abrir
+              </button>
+              {localDatabaseState.connected ? (
+                <button
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 lg:col-start-4"
+                  type="button"
+                  disabled={isBusy || localDatabaseState.busy}
+                  onClick={handleDisconnectLocalDatabase}
+                >
+                  Desconectar
+                </button>
+              ) : null}
+            </div>
           </div>
         </section>
 
@@ -1457,7 +1798,7 @@ export default function Dashboard({ activeUser, onLogout }) {
           <section className="space-y-5">
             {restoredFromStorage && lastSession && result ? (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900">
-                Resultado recuperado de localStorage: {lastSession.processedRows.toLocaleString()} fila(s)
+                Resultado recuperado del almacenamiento local: {lastSession.processedRows.toLocaleString()} fila(s)
                 procesada(s).
               </div>
             ) : null}
