@@ -130,9 +130,13 @@ export const useAttendanceStore = create(
                   processedRows: lastResult.metadata?.processedRows ?? 0,
                   generatedAt: lastResult.metadata?.generatedAt,
                 }
-              : null,
+            : null,
           };
         }),
+      setLastSession: (lastSession) =>
+        set((state) => ({
+          lastSession: state.saveSession ? lastSession : null,
+        })),
       resetMapping: () => set({ mapping: {} }),
       clearLastResult: () => set({ lastResult: null, lastSession: null }),
       clearExpiredSession: () =>
@@ -167,7 +171,7 @@ export const useAttendanceStore = create(
         exportFilename: state.exportFilename,
         saveSession: state.saveSession,
         mapping: state.mapping,
-        lastResult: state.saveSession ? state.lastResult : null,
+        lastResult: null,
         lastSession: state.saveSession ? state.lastSession : null,
       }),
     },

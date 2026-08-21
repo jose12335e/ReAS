@@ -671,18 +671,37 @@ function durationStringToExcelDuration(value) {
 
 function asNumeric(value = 0) {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
-  const normalized = String(value ?? '').replace('%', '').replace(',', '.').trim();
+  const raw = String(value ?? '').trim();
+  if (/^\d+:\d{1,2}(:\d{1,2})?$/.test(raw)) return parseDuration(raw) / 60;
+  const normalized = raw.replace('%', '').replace(',', '.').trim();
   const numeric = Number(normalized);
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
-function table6AbsenceRate(employee) {
+function clampRate(value = 0) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.min(1, Math.max(0, numeric));
+}
+
+function table6DayRate(employee) {
+  const daysToWork = asNumeric(employee.diasATrabajar);
+  const workedDays = asNumeric(employee.diasTrabajadosCompletos);
+  return daysToWork > 0 ? clampRate(workedDays / daysToWork) : 0;
+}
+
+function table6HourRate(employee) {
   const expected = asNumeric(employee.horasEsperadas);
   const recognized = asNumeric(employee.horasReconocidas ?? employee.horasTrabajadasReconocidas);
+  return expected > 0 ? clampRate(recognized / expected) : 0;
+}
+
+function table6AbsenceRate(employee) {
+  const expected = asNumeric(employee.horasEsperadas);
   if (expected > 0) {
-    return Math.max(0, 1 - recognized / expected) * 100;
+    return (1 - table6HourRate(employee)) * 100;
   }
-  return asNumeric(employee.tasaAusentismo);
+  return Math.min(100, Math.max(0, asNumeric(employee.tasaAusentismo)));
 }
 
 function table6Priority(employee) {
@@ -1359,11 +1378,11 @@ function addHoursVsWorkedSheet(workbook, employees, reportOptions = {}, options 
       }
       const expectedHours = asNumeric(employee.horasEsperadas);
       const recognizedHours = asNumeric(employee.horasReconocidas ?? employee.horasTrabajadasReconocidas);
-      const dayRate = employee.diasATrabajar > 0 ? employee.diasTrabajadosCompletos / employee.diasATrabajar : 0;
-      const hourRate = expectedHours > 0 ? recognizedHours / expectedHours : 0;
-      const absenceRate = table6AbsenceRate(employee) / 100;
-      totals.diasATrabajar += Number(employee.diasATrabajar || 0);
-      totals.diasTrabajados += Number(employee.diasTrabajadosCompletos || 0);
+      const dayRate = table6DayRate(employee);
+      const hourRate = table6HourRate(employee);
+      const absenceRate = clampRate(table6AbsenceRate(employee) / 100);
+      totals.diasATrabajar += asNumeric(employee.diasATrabajar);
+      totals.diasTrabajados += asNumeric(employee.diasTrabajadosCompletos);
       totals.horasEsperadas += expectedHours;
       totals.horasReconocidas += recognizedHours;
 
@@ -1399,11 +1418,11 @@ function addHoursVsWorkedSheet(workbook, employees, reportOptions = {}, options 
   }
 
   const totalDayRate =
-    totals.diasATrabajar > 0 ? totals.diasTrabajados / totals.diasATrabajar : 0;
+    totals.diasATrabajar > 0 ? clampRate(totals.diasTrabajados / totals.diasATrabajar) : 0;
   const totalHourRate =
-    totals.horasEsperadas > 0 ? totals.horasReconocidas / totals.horasEsperadas : 0;
+    totals.horasEsperadas > 0 ? clampRate(totals.horasReconocidas / totals.horasEsperadas) : 0;
   const totalAbsenceRate =
-    totals.horasEsperadas > 0 ? Math.max(0, 1 - totalHourRate) : 0;
+    totals.horasEsperadas > 0 ? clampRate(1 - totalHourRate) : 0;
 
   rowNumber = pagination.beforeRows(rowNumber, 1);
   worksheet.getRow(rowNumber).values = [
@@ -1430,11 +1449,11 @@ function addHoursVsWorkedSheet(workbook, employees, reportOptions = {}, options 
 function writeTable6EmployeeRow(worksheet, rowNumber, employee, totals) {
   const expectedHours = asNumeric(employee.horasEsperadas);
   const recognizedHours = asNumeric(employee.horasReconocidas ?? employee.horasTrabajadasReconocidas);
-  const dayRate = employee.diasATrabajar > 0 ? employee.diasTrabajadosCompletos / employee.diasATrabajar : 0;
-  const hourRate = expectedHours > 0 ? recognizedHours / expectedHours : 0;
-  const absenceRate = table6AbsenceRate(employee) / 100;
-  totals.diasATrabajar += Number(employee.diasATrabajar || 0);
-  totals.diasTrabajados += Number(employee.diasTrabajadosCompletos || 0);
+  const dayRate = table6DayRate(employee);
+  const hourRate = table6HourRate(employee);
+  const absenceRate = clampRate(table6AbsenceRate(employee) / 100);
+  totals.diasATrabajar += asNumeric(employee.diasATrabajar);
+  totals.diasTrabajados += asNumeric(employee.diasTrabajadosCompletos);
   totals.horasEsperadas += expectedHours;
   totals.horasReconocidas += recognizedHours;
 
@@ -1460,11 +1479,11 @@ function writeTable6EmployeeRow(worksheet, rowNumber, employee, totals) {
 
 function writeTable6SubtotalRow(worksheet, rowNumber, label, totals) {
   const totalDayRate =
-    totals.diasATrabajar > 0 ? totals.diasTrabajados / totals.diasATrabajar : 0;
+    totals.diasATrabajar > 0 ? clampRate(totals.diasTrabajados / totals.diasATrabajar) : 0;
   const totalHourRate =
-    totals.horasEsperadas > 0 ? totals.horasReconocidas / totals.horasEsperadas : 0;
+    totals.horasEsperadas > 0 ? clampRate(totals.horasReconocidas / totals.horasEsperadas) : 0;
   const totalAbsenceRate =
-    totals.horasEsperadas > 0 ? Math.max(0, 1 - totalHourRate) : 0;
+    totals.horasEsperadas > 0 ? clampRate(1 - totalHourRate) : 0;
 
   worksheet.getRow(rowNumber).values = [
     label,

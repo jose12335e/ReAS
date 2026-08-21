@@ -15,7 +15,7 @@ import {
   UserCheck,
   UploadCloud,
 } from 'lucide-react';
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AppSidebar from '../components/AppSidebar.jsx';
 import AuxiliaryColumnMapper from '../components/AuxiliaryColumnMapper.jsx';
 import ColumnMapper from '../components/ColumnMapper.jsx';
@@ -38,8 +38,12 @@ import {
   validateFileForUpload,
   validateFilesForUpload,
 } from '../utils/validationRules.js';
-
-const MAX_LOCAL_STORAGE_RESULT_ROWS = 15000;
+import {
+  buildReportSessionMetadata,
+  clearReportSession,
+  loadReportSession,
+  saveReportSession,
+} from '../utils/reportSessionStorage.js';
 
 const AuditReviewPanel = lazy(() => import('../components/AuditReviewPanel.jsx'));
 const DashboardOverview = lazy(() => import('../components/DashboardOverview.jsx'));
@@ -267,6 +271,7 @@ export default function Dashboard({ activeUser, onLogout }) {
     setSaveSession,
     setMapping,
     setLastResult,
+    setLastSession,
     clearLastResult,
     clearExpiredSession,
   } = useAttendanceStore();
@@ -277,13 +282,29 @@ export default function Dashboard({ activeUser, onLogout }) {
     return preview.validation ?? null;
   }, [preview.headers.length, preview.validation]);
 
-  function canPersistFullResult(nextResult) {
-    const processedRows = Number(nextResult?.metadata?.processedRows ?? nextResult?.processedRows?.length ?? 0);
-    const monthlyRows = (nextResult?.monthlyResults ?? []).reduce(
-      (total, monthResult) => total + Number(monthResult?.metadata?.processedRows ?? monthResult?.processedRows?.length ?? 0),
-      0,
-    );
-    return processedRows + monthlyRows <= MAX_LOCAL_STORAGE_RESULT_ROWS;
+  const clearSavedResult = useCallback(() => {
+    persistenceVersionRef.current += 1;
+    clearLastResult();
+    clearReportSession().catch(() => {});
+  }, [clearLastResult]);
+
+  function isSessionMetadataExpired(metadata) {
+    if (!metadata?.savedAt) return false;
+    const savedAt = new Date(metadata.savedAt).getTime();
+    if (!Number.isFinite(savedAt)) return true;
+    return Date.now() - savedAt > SESSION_TTL_HOURS * 60 * 60 * 1000;
+  }
+
+  async function persistResultSession(nextResult) {
+    if (!saveSession) return null;
+    const metadata = await saveReportSession(nextResult);
+    setLastResult(nextResult);
+    setLastSession(metadata ?? buildReportSessionMetadata(nextResult));
+    return metadata;
+  }
+
+  function canPersistFullResult() {
+    return true;
   }
 
   useEffect(() => {
@@ -307,7 +328,7 @@ export default function Dashboard({ activeUser, onLogout }) {
         setMapping(payload.mapping);
         setResult(null);
         setRestoredFromStorage(false);
-        clearLastResult();
+        clearSavedResult();
         setFileWarnings([]);
         setErrors(payload.validation?.errors ?? []);
         setIsBusy(false);
@@ -383,7 +404,7 @@ export default function Dashboard({ activeUser, onLogout }) {
     };
 
     return () => worker.terminate();
-  }, [clearLastResult, setLastResult, setMapping]);
+  }, [clearSavedResult, setLastResult, setMapping]);
 
   useEffect(
     () => () => {
@@ -398,11 +419,40 @@ export default function Dashboard({ activeUser, onLogout }) {
   }, [clearExpiredSession]);
 
   useEffect(() => {
+    let cancelled = false;
+    if (!saveSession || result || lastResult) return undefined;
+
+    loadReportSession()
+      .then((record) => {
+        if (cancelled || !record?.result) return;
+        if (isSessionMetadataExpired(record.metadata)) {
+          clearReportSession().catch(() => {});
+          return;
+        }
+        setResult(record.result);
+        setLastResult(record.result);
+        setLastSession(record.metadata ?? buildReportSessionMetadata(record.result));
+        setRestoredFromStorage(true);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [lastResult, result, saveSession, setLastResult, setLastSession]);
+
+  useEffect(() => {
     if (saveSession && !result && lastResult) {
       setResult(lastResult);
       setRestoredFromStorage(true);
     }
   }, [lastResult, result, saveSession]);
+
+  useEffect(() => {
+    if (saveSession && result) {
+      scheduleResultPersistence(result);
+    }
+  }, [result, saveSession]);
 
   useEffect(() => {
     const allowedWithoutResult = ['dashboard', 'upload', 'rules'];
@@ -447,7 +497,7 @@ export default function Dashboard({ activeUser, onLogout }) {
     setPrimaryFile(file);
     setResult(null);
     setRestoredFromStorage(false);
-    clearLastResult();
+    clearSavedResult();
     setErrors([]);
     setFileWarnings(fileValidation.warnings);
     setRestoredFromStorage(false);
@@ -465,7 +515,7 @@ export default function Dashboard({ activeUser, onLogout }) {
     }
     setResult(null);
     setRestoredFromStorage(false);
-    clearLastResult();
+    clearSavedResult();
     setErrors([]);
     setIsBusy(true);
     setProgress(0);
@@ -629,8 +679,7 @@ export default function Dashboard({ activeUser, onLogout }) {
       setResult(null);
       setRestoredFromStorage(false);
       setAuditFeedback(null);
-      persistenceVersionRef.current += 1;
-      clearLastResult();
+      clearSavedResult();
     }
     setProgress(0);
     setStatus('');
@@ -807,11 +856,9 @@ export default function Dashboard({ activeUser, onLogout }) {
     persistenceTimerRef.current = window.setTimeout(() => {
       const persist = () => {
         if (persistenceVersion !== persistenceVersionRef.current) return;
-        try {
-          setLastResult(nextResult);
-        } catch {
+        persistResultSession(nextResult).catch(() => {
           // El resultado permanece en pantalla aunque localStorage no tenga espacio suficiente.
-        }
+        });
       };
       if ('requestIdleCallback' in window) {
         window.requestIdleCallback(persist, { timeout: 1200 });
@@ -933,7 +980,7 @@ export default function Dashboard({ activeUser, onLogout }) {
     setRestoredFromStorage(false);
     setAuditFeedback(null);
     persistenceVersionRef.current += 1;
-    clearLastResult();
+    clearSavedResult();
     setActiveTab('upload');
   }
 
@@ -948,6 +995,7 @@ export default function Dashboard({ activeUser, onLogout }) {
     setSaveSession(nextValue);
     if (!nextValue) {
       setRestoredFromStorage(false);
+      clearReportSession().catch(() => {});
     }
   }
 
@@ -1102,7 +1150,7 @@ export default function Dashboard({ activeUser, onLogout }) {
             }
             setDefaultScheduleType(event.target.value);
             setResult(null);
-            clearLastResult();
+            clearSavedResult();
           }}
         >
           {Object.values(scheduleConfig).map((schedule) => (
@@ -1326,7 +1374,7 @@ export default function Dashboard({ activeUser, onLogout }) {
                     }
                     setDefaultScheduleType(event.target.value);
                     setResult(null);
-                    clearLastResult();
+                    clearSavedResult();
                   }}
                 >
                   {Object.values(scheduleConfig).map((schedule) => (
@@ -1523,7 +1571,7 @@ export default function Dashboard({ activeUser, onLogout }) {
                         const month = preview.availableMonths.find((option) => option.key === event.target.value);
                         setSelectedMonth(month ?? null);
                         setResult(null);
-                        clearLastResult();
+                        clearSavedResult();
                       }}
                     >
                       {preview.availableMonths.map((month) => (
@@ -1546,7 +1594,7 @@ export default function Dashboard({ activeUser, onLogout }) {
                         onChange={(event) => {
                           setMultiMonthReportMode(event.target.value);
                           setResult(null);
-                          clearLastResult();
+                          clearSavedResult();
                         }}
                       >
                         <option value="separated">Tablas separadas por mes</option>
@@ -1677,7 +1725,7 @@ export default function Dashboard({ activeUser, onLogout }) {
               }
               setModifiedSchedule(nextSchedule);
               setResult(null);
-              clearLastResult();
+              clearSavedResult();
             }}
             onSelectModifiedSchedule={() => {
               if (
@@ -1688,7 +1736,7 @@ export default function Dashboard({ activeUser, onLogout }) {
               }
               setDefaultScheduleType(SCHEDULE_TYPES.MODIFIED);
               setResult(null);
-              clearLastResult();
+              clearSavedResult();
             }}
           />
         ) : null}
