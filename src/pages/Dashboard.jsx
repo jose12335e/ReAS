@@ -1448,6 +1448,16 @@ export default function Dashboard({ activeUser, onLogout }) {
 
   return (
     <main className="min-h-screen bg-[#eef3f7]">
+      <button
+        className="fixed bottom-5 right-5 z-50 inline-flex h-12 items-center gap-2 rounded-full bg-slate-950 px-5 text-sm font-semibold text-white shadow-xl shadow-slate-900/20 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+        type="button"
+        disabled={isBusy || localDatabaseState.busy}
+        onClick={handleChooseLocalDatabase}
+        title="Elegir carpeta de base de datos local"
+      >
+        <Database className="h-4 w-4" />
+        Base local
+      </button>
       <div className="flex min-h-screen">
         <AppSidebar
           tabs={tabs}
