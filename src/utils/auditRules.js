@@ -190,25 +190,7 @@ function buildDailyAuditDetails(processedRows = [], employeeDifferenceMin = 0) {
     );
   }
 
-  const relevantPattern =
-    employeeDifferenceMin > 0
-      ? /sin horas reconocidas|permiso sin tiempo|ausencia|ponche/i
-      : /excede|permiso|licencia|ausencia|tardanza|salida/i;
-
-  return details
-    .filter((detail) => !isSettledClassifiedDetail(detail))
-    .filter((detail) =>
-      detail.pistas.some((hint) => relevantPattern.test(hint)) ||
-      relevantPattern.test(detail.estadoFinal),
-    )
-    .sort((a, b) => {
-      const aImpact =
-        parseDurationToMinutes(a.tiempoJustificado) + parseDurationToMinutes(a.tiempoNoJustificado);
-      const bImpact =
-        parseDurationToMinutes(b.tiempoJustificado) + parseDurationToMinutes(b.tiempoNoJustificado);
-      return bImpact - aImpact;
-    })
-    .slice(0, 5);
+  return [];
 }
 
 function buildProcessedRowsConsistency(processedRows = [], employee = {}) {

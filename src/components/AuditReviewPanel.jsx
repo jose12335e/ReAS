@@ -733,7 +733,7 @@ export default function AuditReviewPanel({
           </div>
           <p className="mt-1 text-sm text-slate-600">
             Compara horas esperadas, reconocidas y tiempo explicado. Si algo no cuadra, el sistema muestra el
-            empleado y los dias que probablemente causan la diferencia.
+            empleado y solamente los registros con descuadre real o tiempo pendiente de captura.
           </p>
         </div>
         <div className="grid gap-2 text-sm sm:grid-cols-3 lg:min-w-[520px]">
@@ -771,7 +771,7 @@ export default function AuditReviewPanel({
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
               Hay empleados con descuadre. Abre cada caso y revisa si falta tiempo, sobra tiempo, hay permiso sin
-              horas, ponche irregular o una clasificacion que no corresponde.
+              horas, ponche irregular o una inconsistencia entre resumen y filas procesadas.
             </span>
           </div>
           {pending.map((row, index) => (
