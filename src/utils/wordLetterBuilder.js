@@ -8,6 +8,7 @@ const DOCX_TEXT_FILES = /^word\/(document|header\d*|footer\d*)\.xml$/;
 export const WORD_LETTER_FIELDS = [
   { key: 'codigo_dgh', label: 'Codigo DGH' },
   { key: 'mes_evaluado', label: 'Mes evaluado' },
+  { key: 'mes_evaluado_nombre', label: 'Nombre del mes evaluado' },
   { key: 'area', label: 'Area / alcance' },
   { key: 'tipo_alcance', label: 'Tipo de alcance' },
   { key: 'empleados_analizados', label: 'Empleados analizados' },
@@ -46,6 +47,8 @@ export const WORD_LETTER_FIELDS = [
   { key: 'cargo_generado_por', label: 'Cargo generado por' },
   { key: 'codigo_generado_por', label: 'Codigo generado por' },
   { key: 'fecha_generacion', label: 'Fecha de generacion' },
+  { key: 'fecha_expedicion', label: 'Fecha de expedicion' },
+  { key: 'fecha_creacion', label: 'Fecha de creacion' },
   { key: 'sistema', label: 'Sistema' },
 ];
 
@@ -73,8 +76,54 @@ const FIELD_MATCH_ALIASES = [
   ['permisos', ['permisos']],
   ['empleados_analizados', ['empleados analizados', 'colaboradores analizados']],
   ['registros_procesados', ['registros procesados']],
+  ['fecha_expedicion', ['fecha de expedicion', 'fecha expedicion', 'fecha de emision', 'fecha emision', 'fecha de creacion', 'fecha creacion']],
   ['mes_evaluado', ['mes evaluado', 'periodo evaluado', 'período evaluado']],
+  ['mes_evaluado_nombre', ['mes', 'mes correspondiente', 'mes del reporte']],
   ['codigo_dgh', ['codigo dgh', 'código dgh', 'no. dgh', 'no dgh']],
+];
+
+const MONTH_NAMES = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'setiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+];
+
+const MONTH_NUMBER_TO_NAME = {
+  '01': 'enero',
+  '02': 'febrero',
+  '03': 'marzo',
+  '04': 'abril',
+  '05': 'mayo',
+  '06': 'junio',
+  '07': 'julio',
+  '08': 'agosto',
+  '09': 'septiembre',
+  10: 'octubre',
+  11: 'noviembre',
+  12: 'diciembre',
+};
+
+const CREATION_DATE_CONTEXT_WORDS = [
+  'fecha de expedicion',
+  'fecha expedicion',
+  'fecha de emision',
+  'fecha emision',
+  'fecha de creacion',
+  'fecha creacion',
+  'fecha de generacion',
+  'fecha generacion',
+  'generado el',
+  'expedido el',
 ];
 
 const SUM_NUMERIC_FIELDS = [
@@ -124,6 +173,28 @@ function formatNumber(value) {
 function formatPercent(value) {
   const numeric = Number(value || 0);
   return `${Math.round(Number.isFinite(numeric) ? numeric : 0)}%`;
+}
+
+function formatLongDate(value = new Date()) {
+  return value.toLocaleDateString('es-DO', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+function getEvaluationMonthInfo(metadata = {}) {
+  const rawLabel = metadata.selectedMonth?.label ?? metadata.monthLabel ?? metadata.selectedMonth?.key ?? '';
+  const rawKey = metadata.selectedMonth?.key ?? '';
+  const combined = [rawLabel, rawKey].filter(Boolean).join(' ');
+  const normalized = normalizeText(combined);
+  const namedMonth = MONTH_NAMES.find((month) => normalized.includes(month));
+  const numericMonth = String(rawKey || rawLabel).match(/(?:^|\D)(0[1-9]|1[0-2])(?:\D|$)/)?.[1];
+  const monthName = namedMonth === 'setiembre' ? 'septiembre' : namedMonth || MONTH_NUMBER_TO_NAME[numericMonth] || '';
+  return {
+    label: rawLabel || monthName || 'No detectado',
+    name: monthName || rawLabel || 'No detectado',
+  };
 }
 
 function minutesToDuration(totalMinutes = 0) {
@@ -272,6 +343,29 @@ function findFieldMatch(text = '') {
   );
 }
 
+function findMonthValue(text = '') {
+  const match = String(text).match(
+    /\b(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/i,
+  );
+  return match?.[1] ?? '';
+}
+
+function hasCreationDateContext(text = '') {
+  const normalized = normalizeText(text);
+  return CREATION_DATE_CONTEXT_WORDS.some((word) => normalized.includes(normalizeText(word)));
+}
+
+function extractDateValue(text = '') {
+  const raw = String(text).trim();
+  const datePattern = /[0-3]?\d[/-][01]?\d[/-]\d{2,4}|[0-3]?\d\s+de\s+[a-záéíóúñ]+\s+de\s+\d{4}/gi;
+  const afterSeparator = raw.match(
+    /[:：]\s*([0-3]?\d[/-][01]?\d[/-]\d{2,4}|[0-3]?\d\s+de\s+[a-záéíóúñ]+\s+de\s+\d{4})/i,
+  );
+  if (afterSeparator) return afterSeparator[1].trim();
+  const values = [...raw.matchAll(datePattern)].map((match) => match[0].trim());
+  return values.at(-1) ?? '';
+}
+
 function extractReplacementValue(text = '') {
   const raw = String(text).trim();
   const afterSeparator = raw.match(/[:：]\s*(-?\d{1,8}(?::\d{2}){1,2}|-?\d{1,8}(?:[.,]\d+)?\s*%|-?\d{1,8}(?:[.,]\d+)?)/);
@@ -303,11 +397,20 @@ function inferContextualField(blocks = [], index) {
 function detectTemplateValueMatches(blocks = []) {
   const seen = new Set();
   return blocks.flatMap((text, index) => {
-    const fieldMatch = findFieldMatch(text) ?? inferContextualField(blocks, index);
+    const monthValue = findMonthValue(text);
+    const genericMonthMatch = monthValue && !hasCreationDateContext(text) ? ['mes_evaluado_nombre'] : null;
+    const fieldMatch = findFieldMatch(text) ?? inferContextualField(blocks, index) ?? genericMonthMatch;
     if (!fieldMatch) return [];
     let oldValue = extractReplacementValue(text);
     let replacementText = text;
     let sourceText = text;
+    const [fieldKey] = fieldMatch;
+    if (!oldValue && fieldKey === 'fecha_expedicion') {
+      oldValue = extractDateValue(text);
+    }
+    if (!oldValue && (fieldKey === 'mes_evaluado' || fieldKey === 'mes_evaluado_nombre')) {
+      oldValue = monthValue;
+    }
     if (!oldValue) {
       const nextValueBlock = blocks
         .slice(index + 1, index + 4)
@@ -317,7 +420,6 @@ function detectTemplateValueMatches(blocks = []) {
       sourceText = `${text} ${nextValueBlock || ''}`.trim();
     }
     if (!oldValue) return [];
-    const [fieldKey] = fieldMatch;
     const key = `${fieldKey}::${sourceText}::${oldValue}`;
     if (seen.has(key)) return [];
     seen.add(key);
@@ -414,11 +516,14 @@ export function buildLetterData(result, scopeOption, options = {}) {
   const absenceMin =
     parseDurationToMinutes(summary.tiempoAusenciaNoJustificada) +
     parseDurationToMinutes(summary.tiempoAusenciaJustificada);
-  const selectedMonth = metadata.selectedMonth?.label ?? metadata.monthLabel ?? metadata.selectedMonth?.key ?? '';
+  const selectedMonth = getEvaluationMonthInfo(metadata);
+  const now = new Date();
+  const expeditionDate = formatLongDate(now);
 
   return {
     codigo_dgh: options.dghCode ?? metadata.dghCode ?? '',
-    mes_evaluado: selectedMonth || 'No detectado',
+    mes_evaluado: selectedMonth.label,
+    mes_evaluado_nombre: selectedMonth.name,
     area: scopeOption?.area ?? 'Total general',
     tipo_alcance: scopeOption?.type === 'general' ? 'Total general' : scopeOption?.type ?? 'alcance',
     empleados_analizados: formatNumber(scopeOption?.employeeCount ?? result?.summaryByEmployee?.length ?? 0),
@@ -456,7 +561,9 @@ export function buildLetterData(result, scopeOption, options = {}) {
     generado_por: generatedBy.name ?? '',
     cargo_generado_por: generatedBy.role ?? '',
     codigo_generado_por: generatedBy.code ?? '',
-    fecha_generacion: new Date().toLocaleString('es-DO'),
+    fecha_generacion: now.toLocaleString('es-DO'),
+    fecha_expedicion: expeditionDate,
+    fecha_creacion: expeditionDate,
     sistema: 'ReAS',
   };
 }

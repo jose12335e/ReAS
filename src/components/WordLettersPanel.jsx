@@ -24,6 +24,8 @@ import {
 const DEFAULT_FIELD_KEYS = [
   'codigo_dgh',
   'mes_evaluado',
+  'mes_evaluado_nombre',
+  'fecha_expedicion',
   'area',
   'empleados_analizados',
   'dias_a_trabajar',
