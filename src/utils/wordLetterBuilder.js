@@ -175,14 +175,6 @@ function formatPercent(value) {
   return `${Math.round(Number.isFinite(numeric) ? numeric : 0)}%`;
 }
 
-function formatLongDate(value = new Date()) {
-  return value.toLocaleDateString('es-DO', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-  });
-}
-
 function getEvaluationMonthInfo(metadata = {}) {
   const rawLabel = metadata.selectedMonth?.label ?? metadata.monthLabel ?? metadata.selectedMonth?.key ?? '';
   const rawKey = metadata.selectedMonth?.key ?? '';
@@ -407,45 +399,56 @@ function inferContextualField(blocks = [], index) {
   return null;
 }
 
+const DETECTABLE_VALUE_PATTERN =
+  /-?\d{1,8}(?::\d{2}){1,2}|-?\d{1,8}(?:[.,]\d+)?\s*%|-?\d{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?|-?\d{1,8}(?:[.,]\d+)?/g;
+
+function detectNumericValuesInText(text = '') {
+  const raw = String(text);
+  return [...raw.matchAll(DETECTABLE_VALUE_PATTERN)]
+    .map((match, occurrence) => {
+      const value = match[0].trim();
+      const before = collapseText(raw.slice(0, match.index));
+      const after = collapseText(raw.slice((match.index ?? 0) + match[0].length));
+      const contextBefore = before.slice(-120).trim();
+      const contextAfter = after.slice(0, 70).trim();
+      const matchContext = collapseText([contextBefore, value].filter(Boolean).join(' '));
+      return {
+        occurrence,
+        value,
+        contextBefore,
+        contextAfter,
+        matchContext,
+      };
+    })
+    .filter((item) => item.contextBefore || item.contextAfter);
+}
+
 function detectTemplateValueMatches(blocks = []) {
   const seen = new Set();
   return blocks.flatMap((text, index) => {
-    const monthValue = findMonthValue(text);
-    const genericMonthMatch = monthValue && !hasCreationDateContext(text) ? ['mes_evaluado_nombre'] : null;
-    const fieldMatch = findFieldMatch(text) ?? inferContextualField(blocks, index) ?? genericMonthMatch;
-    if (!fieldMatch) return [];
-    let oldValue = extractReplacementValue(text);
-    let replacementText = text;
-    let sourceText = text;
-    const [fieldKey] = fieldMatch;
-    if (!oldValue && fieldKey === 'fecha_expedicion') {
-      oldValue = extractDateValue(text);
-    }
-    if (!oldValue && (fieldKey === 'mes_evaluado' || fieldKey === 'mes_evaluado_nombre')) {
-      oldValue = monthValue;
-    }
-    if (!oldValue) {
-      const nextValueBlock = blocks
-        .slice(index + 1, index + 4)
-        .find((candidate) => isLikelyValueOnly(candidate) || extractReplacementValue(candidate));
-      oldValue = extractReplacementValue(nextValueBlock);
-      replacementText = nextValueBlock || text;
-      sourceText = `${text} ${nextValueBlock || ''}`.trim();
-    }
-    if (!oldValue) return [];
-    const key = `${fieldKey}::${sourceText}::${oldValue}`;
-    if (seen.has(key)) return [];
-    seen.add(key);
-    return [
-      {
-        id: `auto-${index}-${fieldKey}`,
-        fieldKey,
-        label: WORD_LETTER_FIELDS.find((field) => field.key === fieldKey)?.label ?? fieldKey,
-        text: sourceText,
-        replaceText: replacementText,
-        oldValue,
-      },
-    ];
+    const numbers = detectNumericValuesInText(text);
+    if (!numbers.length) return [];
+    return numbers.flatMap((numberMatch) => {
+      const contextText = collapseText([numberMatch.contextBefore, numberMatch.value].filter(Boolean).join(' '));
+      const fieldMatch = findFieldMatch(contextText) ?? findFieldMatch(text) ?? inferContextualField(blocks, index);
+      if (!fieldMatch) return [];
+      const [fieldKey] = fieldMatch;
+      const key = `${fieldKey}::${numberMatch.matchContext}::${numberMatch.value}::${numberMatch.occurrence}`;
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [
+        {
+          id: `number-${index}-${numberMatch.occurrence}-${fieldKey}`,
+          fieldKey,
+          label: WORD_LETTER_FIELDS.find((field) => field.key === fieldKey)?.label ?? fieldKey,
+          text: numberMatch.contextBefore || text,
+          contextBefore: numberMatch.contextBefore,
+          contextAfter: numberMatch.contextAfter,
+          replaceText: numberMatch.matchContext || numberMatch.value,
+          oldValue: numberMatch.value,
+        },
+      ];
+    });
   });
 }
 
@@ -531,7 +534,7 @@ export function buildLetterData(result, scopeOption, options = {}) {
     parseDurationToMinutes(summary.tiempoAusenciaJustificada);
   const selectedMonth = getEvaluationMonthInfo(metadata);
   const now = new Date();
-  const expeditionDate = formatLongDate(now);
+  const expeditionDate = now.toLocaleDateString('es-DO');
 
   return {
     codigo_dgh: options.dghCode ?? metadata.dghCode ?? '',
@@ -594,9 +597,17 @@ export async function inspectWordTemplate(file) {
   const text = searchBlocks.join('\n');
   const placeholders = extractPlaceholdersFromText(text);
   const detectedMatches = detectTemplateValueMatches(searchBlocks);
-  const candidates = [...new Set(searchBlocks.filter(shouldSuggestText))]
-    .slice(0, 80)
-    .map((value, index) => ({ id: `candidate-${index}`, value }));
+  const candidates = detectedMatches
+    .map((match) => ({
+      id: match.id,
+      value: match.text,
+      oldValue: match.oldValue,
+      fieldKey: match.fieldKey,
+      label: match.label,
+      contextBefore: match.contextBefore,
+      contextAfter: match.contextAfter,
+    }))
+    .slice(0, 80);
   return {
     fileName: file.name,
     placeholders,
