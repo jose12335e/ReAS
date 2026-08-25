@@ -218,7 +218,7 @@ function safeNumber(value) {
 }
 
 function xmlEscape(value = '') {
-  return String(value)
+  return sanitizeXmlText(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -233,6 +233,19 @@ function xmlUnescape(value = '') {
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, '&');
+}
+
+function sanitizeXmlText(value = '') {
+  return String(value).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u0084\u0086-\u009F]/g, '');
+}
+
+function sanitizeTemplateData(value) {
+  if (value == null) return value;
+  if (Array.isArray(value)) return value.map((item) => sanitizeTemplateData(item));
+  if (typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, sanitizeTemplateData(item)]));
+  }
+  return sanitizeXmlText(value);
 }
 
 function sanitizeFileName(value = 'carta-reas') {
@@ -691,6 +704,22 @@ function applyAssistedReplacements(zip, replacements = []) {
   return { skippedReplacements };
 }
 
+function validateGeneratedWordXml(zip) {
+  if (typeof DOMParser === 'undefined') return;
+  const parser = new DOMParser();
+  Object.keys(zip.files).forEach((path) => {
+    if (!DOCX_TEXT_FILES.test(path)) return;
+    const file = zip.file(path);
+    if (!file) return;
+    const xml = file.asText();
+    const parsed = parser.parseFromString(xml, 'application/xml');
+    const parserError = parsed.querySelector('parsererror');
+    if (parserError) {
+      throw new Error(`La carta genero XML invalido en ${path}. Revisa los reemplazos detectados o usa campos {{ }}.`);
+    }
+  });
+}
+
 export async function generateWordLetter({ templateFile, data, replacements = [], outputName = 'carta-reas' }) {
   if (!templateFile) throw new Error('Carga una plantilla Word .docx.');
   if (!/\.docx$/i.test(templateFile.name)) throw new Error('Solo se permiten plantillas .docx.');
@@ -710,10 +739,11 @@ export async function generateWordLetter({ templateFile, data, replacements = []
         return '';
       },
     });
-    doc.render(data);
+    doc.render(sanitizeTemplateData(data));
     renderedZip = doc.getZip();
   }
   const { skippedReplacements } = applyAssistedReplacements(renderedZip, replacements);
+  validateGeneratedWordXml(renderedZip);
   const blob = renderedZip.generate({
     type: 'blob',
     mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
