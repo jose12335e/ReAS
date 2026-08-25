@@ -1,9 +1,12 @@
 import {
   AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
   CheckCircle2,
   Download,
   FileText,
   FolderOpen,
+  ListChecks,
   Loader2,
   Sparkles,
   UploadCloud,
@@ -194,6 +197,21 @@ export default function WordLettersPanel({
     ],
     [activeReplacementEntries, finalData, placeholders],
   );
+  const selectedMatchIndex = selectedMatch
+    ? detectedMatches.findIndex((match) => match.id === selectedMatch.id)
+    : -1;
+  const approvedNumberCount = detectedMatches.filter((match) => replacementMappings[match.id]).length;
+  const pendingNumberCount = Math.max(0, detectedMatches.length - approvedNumberCount);
+  const selectedReplacementField = selectedMatch
+    ? replacementMappings[selectedMatch.id] ?? selectedMatch.fieldKey ?? ''
+    : '';
+  const selectedSuggestedValue =
+    selectedMatch && selectedReplacementField && selectedReplacementField !== MANUAL_FIELD_KEY
+      ? finalData[selectedReplacementField] ?? ''
+      : '';
+  const selectedFinalValue = selectedMatch
+    ? manualReplacementValues[selectedMatch.id] ?? selectedSuggestedValue ?? ''
+    : '';
 
   useEffect(() => {
     if (localDatabaseState?.selectedReportId) setLocalReportId(localDatabaseState.selectedReportId);
@@ -274,6 +292,24 @@ export default function WordLettersPanel({
     if (!manualReplacementValues[selectedMatch.id]) {
       const suggested = nextField === MANUAL_FIELD_KEY ? selectedMatch.oldValue : finalData[nextField];
       if (suggested) handleManualReplacementValue(selectedMatch.id, suggested);
+    }
+  }
+
+  function handleSelectAdjacentMatch(direction) {
+    if (!detectedMatches.length) return;
+    const currentIndex = selectedMatchIndex >= 0 ? selectedMatchIndex : 0;
+    const nextIndex = Math.min(
+      detectedMatches.length - 1,
+      Math.max(0, currentIndex + direction),
+    );
+    setSelectedMatchId(detectedMatches[nextIndex]?.id ?? '');
+  }
+
+  function handleFieldSelection(matchId, fieldKey) {
+    handleReplacementChange(matchId, fieldKey);
+    if (fieldKey === MANUAL_FIELD_KEY && !manualReplacementValues[matchId]) {
+      const match = detectedMatches.find((item) => item.id === matchId);
+      handleManualReplacementValue(matchId, match?.oldValue ?? '');
     }
   }
 
@@ -367,8 +403,8 @@ export default function WordLettersPanel({
         ) : null}
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <div className="space-y-5">
+      <div className="space-y-5">
+        <div className="grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
               <UploadCloud className="h-4 w-4 text-teal-700" />
@@ -399,7 +435,7 @@ export default function WordLettersPanel({
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <div className="text-xs font-semibold uppercase text-slate-500">Pendientes de aprobar</div>
-                  <div className="mt-1 text-lg font-semibold text-slate-950">{detectedMatches.length}</div>
+                  <div className="mt-1 text-lg font-semibold text-slate-950">{pendingNumberCount}</div>
                 </div>
               </div>
             ) : null}
@@ -496,25 +532,30 @@ export default function WordLettersPanel({
 
         <div className="space-y-5">
           {templateInfo ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
                     <FileText className="h-4 w-4 text-teal-700" />
-                    Vista de la carta
+                    Carta editable
                   </div>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Haz clic en un numero resaltado para revisar el valor sugerido y aprobar el cambio.
+                    Trabaja directo sobre la carta: amarillo pendiente, azul seleccionado y verde aprobado.
                   </p>
                 </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {activeReplacementEntries.length} aprobado(s)
-                </span>
+                <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 ring-1 ring-emerald-100">
+                    {approvedNumberCount} aprobado(s)
+                  </span>
+                  <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700 ring-1 ring-amber-100">
+                    {pendingNumberCount} pendiente(s)
+                  </span>
+                </div>
               </div>
 
-              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-                <div className="max-h-[620px] overflow-y-auto rounded-xl border border-slate-200 bg-slate-100 p-4">
-                  <div className="mx-auto min-h-[560px] max-w-3xl rounded-sm bg-white px-8 py-10 text-[15px] leading-8 text-slate-900 shadow-sm">
+              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+                <div className="h-[72vh] min-h-[640px] overflow-y-auto rounded-lg border border-slate-200 bg-slate-100 p-4">
+                  <div className="mx-auto min-h-full max-w-4xl rounded-sm bg-white px-10 py-12 text-base leading-9 text-slate-900 shadow-sm sm:px-14">
                     {previewBlocks.length ? (
                       previewBlocks.map((block) => (
                         <p key={block.id} className="mb-4 whitespace-pre-wrap">
@@ -523,7 +564,7 @@ export default function WordLettersPanel({
                               <button
                                 key={`${block.id}-${index}`}
                                 type="button"
-                                className={`mx-0.5 rounded-md px-1.5 py-0.5 font-semibold transition ${
+                                className={`mx-0.5 rounded-md px-2 py-1 font-semibold transition ${
                                   replacementMappings[part.matchId]
                                     ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300'
                                     : selectedMatchId === part.matchId
@@ -546,26 +587,54 @@ export default function WordLettersPanel({
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="self-start rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70 xl:sticky xl:top-5">
                   {selectedMatch ? (
-                    <div className="space-y-3">
-                      <div>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-xs font-semibold uppercase text-slate-500">Numero seleccionado</div>
+                          <div className="mt-1 text-sm font-semibold text-slate-950">
+                            {selectedMatchIndex + 1} de {detectedMatches.length}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                            type="button"
+                            disabled={selectedMatchIndex <= 0}
+                            onClick={() => handleSelectAdjacentMatch(-1)}
+                            title="Numero anterior"
+                          >
+                            <ArrowLeft className="h-4 w-4" />
+                          </button>
+                          <button
+                            className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                            type="button"
+                            disabled={selectedMatchIndex >= detectedMatches.length - 1}
+                            onClick={() => handleSelectAdjacentMatch(1)}
+                            title="Numero siguiente"
+                          >
+                            <ArrowRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                         <div className="text-xs font-semibold uppercase text-slate-500">Texto antes del numero</div>
-                        <div className="mt-1 text-sm font-semibold leading-6 text-slate-900">
+                        <div className="mt-1 max-h-32 overflow-y-auto text-sm font-semibold leading-6 text-slate-900">
                           {selectedMatch.contextBefore || 'Sin texto previo'}
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-lg border border-rose-100 bg-white p-2">
+                        <div className="rounded-lg border border-rose-100 bg-rose-50 p-3">
                           <div className="text-[11px] font-semibold uppercase text-rose-600">Actual</div>
-                          <div className="mt-1 break-words text-sm font-semibold text-rose-950">
+                          <div className="mt-1 break-words text-xl font-semibold text-rose-950">
                             {selectedMatch.oldValue}
                           </div>
                         </div>
-                        <div className="rounded-lg border border-emerald-100 bg-white p-2">
-                          <div className="text-[11px] font-semibold uppercase text-emerald-700">Sugerido</div>
-                          <div className="mt-1 break-words text-sm font-semibold text-emerald-950">
-                            {selectedMatch.fieldKey ? finalData[selectedMatch.fieldKey] || 'sin valor' : 'sin sugerencia'}
+                        <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
+                          <div className="text-[11px] font-semibold uppercase text-emerald-700">Nuevo</div>
+                          <div className="mt-1 break-words text-xl font-semibold text-emerald-950">
+                            {selectedFinalValue || 'sin valor'}
                           </div>
                         </div>
                       </div>
@@ -573,8 +642,8 @@ export default function WordLettersPanel({
                         <span className="text-xs font-semibold uppercase text-slate-500">Concepto / campo</span>
                         <select
                           className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
-                          value={replacementMappings[selectedMatch.id] ?? selectedMatch.fieldKey ?? ''}
-                          onChange={(event) => handleReplacementChange(selectedMatch.id, event.target.value)}
+                          value={selectedReplacementField}
+                          onChange={(event) => handleFieldSelection(selectedMatch.id, event.target.value)}
                         >
                           <option value="">No reemplazar</option>
                           <option value={MANUAL_FIELD_KEY}>Valor manual</option>
@@ -590,14 +659,11 @@ export default function WordLettersPanel({
                         <input
                           className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
                           type="text"
-                          value={
-                            manualReplacementValues[selectedMatch.id] ??
-                            (selectedMatch.fieldKey ? finalData[selectedMatch.fieldKey] ?? '' : '')
-                          }
+                          value={selectedFinalValue}
                           onChange={(event) => handleManualReplacementValue(selectedMatch.id, event.target.value)}
                         />
                       </label>
-                      <div className="grid gap-2">
+                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
                         <button
                           className="inline-flex h-10 items-center justify-center rounded-lg bg-teal-700 px-3 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                           type="button"
@@ -618,6 +684,11 @@ export default function WordLettersPanel({
                           Dejar igual
                         </button>
                       </div>
+                      {activeReplacementEntries.length ? (
+                        <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-xs font-semibold text-emerald-800">
+                          {activeReplacementEntries.length} cambio(s) listos para generar.
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900">
@@ -629,32 +700,36 @@ export default function WordLettersPanel({
             </div>
           ) : null}
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <details className="group rounded-lg border border-slate-200 bg-white shadow-sm shadow-slate-200/70">
+            <summary className="flex cursor-pointer list-none flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
                   <Sparkles className="h-4 w-4 text-teal-700" />
-                  Valores que alimentaran la carta
+                  Ajustes avanzados de valores
                 </div>
                 <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Revisa estos datos antes de generar. Si algo no esta bien, puedes corregirlo aqui sin modificar el
-                  reporte original.
+                  Abre esta parte solo si necesitas corregir un dato base antes de aprobar los numeros de la carta.
                 </p>
               </div>
-              {unknownPlaceholders.length ? (
+              <div className="flex items-center gap-2">
+                {unknownPlaceholders.length ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   {unknownPlaceholders.length} campo(s) no conocidos
                 </span>
-              ) : placeholders.length ? (
+                ) : placeholders.length ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   Campos listos
                 </span>
-              ) : null}
-            </div>
+                ) : null}
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                  {fieldKeysToShow.length} dato(s)
+                </span>
+              </div>
+            </summary>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 border-t border-slate-100 p-4 md:grid-cols-2">
               {fieldKeysToShow.map((fieldKey) => (
                 <FieldEditor
                   key={fieldKey}
@@ -664,30 +739,30 @@ export default function WordLettersPanel({
                 />
               ))}
             </div>
-          </div>
+          </details>
 
           {replacementAuditEntries.length ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <details className="group rounded-lg border border-slate-200 bg-white shadow-sm shadow-slate-200/70">
+              <summary className="flex cursor-pointer list-none flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
-                    <CheckCircle2 className="h-4 w-4 text-teal-700" />
-                    Valores que se reemplazaran
+                    <ListChecks className="h-4 w-4 text-teal-700" />
+                    Cambios aprobados
                   </div>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Cada cambio muestra exactamente el valor viejo y el valor nuevo antes de generar la carta.
+                    Verifica el detalle viejo/nuevo si quieres hacer una revision final.
                   </p>
                 </div>
                 <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700">
                   {replacementAuditEntries.length} cambio(s)
                 </span>
-              </div>
-              <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">
+              </summary>
+              <div className="max-h-[420px] space-y-2 overflow-y-auto border-t border-slate-100 p-4">
                 {replacementAuditEntries.map((item) => (
                   <ReplacementAuditRow key={item.id} item={item} />
                 ))}
               </div>
-            </div>
+            </details>
           ) : null}
         </div>
       </div>
