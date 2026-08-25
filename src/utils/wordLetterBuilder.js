@@ -113,19 +113,6 @@ const MONTH_NUMBER_TO_NAME = {
   12: 'diciembre',
 };
 
-const CREATION_DATE_CONTEXT_WORDS = [
-  'fecha de expedicion',
-  'fecha expedicion',
-  'fecha de emision',
-  'fecha emision',
-  'fecha de creacion',
-  'fecha creacion',
-  'fecha de generacion',
-  'fecha generacion',
-  'generado el',
-  'expedido el',
-];
-
 const SUM_NUMERIC_FIELDS = [
   'diasLaborables',
   'diasATrabajar',
@@ -318,29 +305,6 @@ function uniqueBlocks(values = []) {
   });
 }
 
-function shouldSuggestText(value = '') {
-  const text = String(value).trim();
-  if (text.length < 2 || text.length > 140) return false;
-  if (/^\{\{.+\}\}$/.test(text)) return false;
-  if (/\d/.test(text)) return true;
-  if (/%|:/.test(text)) return true;
-  return [
-    'dias',
-    'horas',
-    'ausentismo',
-    'tardanza',
-    'salida',
-    'ausencia',
-    'eventualidad',
-    'cumplimiento',
-    'trabaj',
-    'reporte',
-    'mes',
-    'direccion',
-    'departamento',
-  ].some((word) => normalizeText(text).includes(word));
-}
-
 function findFieldMatch(text = '') {
   const normalized = normalizeText(text);
   return FIELD_MATCH_ALIASES.find(([, aliases]) =>
@@ -348,19 +312,7 @@ function findFieldMatch(text = '') {
   );
 }
 
-function findMonthValue(text = '') {
-  const match = String(text).match(
-    /\b(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/i,
-  );
-  return match?.[1] ?? '';
-}
-
-function hasCreationDateContext(text = '') {
-  const normalized = normalizeText(text);
-  return CREATION_DATE_CONTEXT_WORDS.some((word) => normalized.includes(normalizeText(word)));
-}
-
-function extractDateValue(text = '') {
+function _extractDateValue(text = '') {
   const raw = String(text).trim();
   const datePattern = /[0-3]?\d[/-][01]?\d[/-]\d{2,4}|[0-3]?\d\s+de\s+[a-záéíóúñ]+\s+de\s+\d{4}/gi;
   const afterSeparator = raw.match(
@@ -382,7 +334,7 @@ function extractReplacementValue(text = '') {
   return values.at(-1) ?? '';
 }
 
-function isLikelyValueOnly(text = '') {
+function _isLikelyValueOnly(text = '') {
   const raw = String(text).trim();
   return /^-?\d{1,8}(?::\d{2}){1,2}$/.test(raw) ||
     /^-?\d{1,8}(?:[.,]\d+)?\s*%$/.test(raw) ||
@@ -431,16 +383,17 @@ function detectTemplateValueMatches(blocks = []) {
     return numbers.flatMap((numberMatch) => {
       const contextText = collapseText([numberMatch.contextBefore, numberMatch.value].filter(Boolean).join(' '));
       const fieldMatch = findFieldMatch(contextText) ?? findFieldMatch(text) ?? inferContextualField(blocks, index);
-      if (!fieldMatch) return [];
-      const [fieldKey] = fieldMatch;
-      const key = `${fieldKey}::${numberMatch.matchContext}::${numberMatch.value}::${numberMatch.occurrence}`;
+      const [fieldKey = ''] = fieldMatch ?? [];
+      const key = `${fieldKey || 'manual'}::${numberMatch.matchContext}::${numberMatch.value}::${numberMatch.occurrence}`;
       if (seen.has(key)) return [];
       seen.add(key);
       return [
         {
-          id: `number-${index}-${numberMatch.occurrence}-${fieldKey}`,
+          id: `number-${index}-${numberMatch.occurrence}`,
+          blockIndex: index,
+          occurrence: numberMatch.occurrence,
           fieldKey,
-          label: WORD_LETTER_FIELDS.find((field) => field.key === fieldKey)?.label ?? fieldKey,
+          label: fieldKey ? WORD_LETTER_FIELDS.find((field) => field.key === fieldKey)?.label ?? fieldKey : '',
           text: numberMatch.contextBefore || text,
           contextBefore: numberMatch.contextBefore,
           contextAfter: numberMatch.contextAfter,
@@ -449,6 +402,45 @@ function detectTemplateValueMatches(blocks = []) {
         },
       ];
     });
+  });
+}
+
+function buildPreviewBlocks(blocks = [], matches = []) {
+  const matchByBlock = new Map();
+  matches.forEach((match) => {
+    if (!matchByBlock.has(match.blockIndex)) matchByBlock.set(match.blockIndex, []);
+    matchByBlock.get(match.blockIndex).push(match);
+  });
+
+  return blocks.map((text, blockIndex) => {
+    const matchesForBlock = matchByBlock.get(blockIndex) ?? [];
+    let occurrence = 0;
+    let cursor = 0;
+    const parts = [];
+    String(text).replace(DETECTABLE_VALUE_PATTERN, (value, ...args) => {
+      const offset = args.at(-2);
+      const match = matchesForBlock.find((item) => item.occurrence === occurrence);
+      if (offset > cursor) {
+        parts.push({ type: 'text', text: String(text).slice(cursor, offset) });
+      }
+      parts.push({
+        type: 'number',
+        text: value,
+        matchId: match?.id ?? null,
+        approved: false,
+      });
+      cursor = offset + value.length;
+      occurrence += 1;
+      return value;
+    });
+    if (cursor < String(text).length) {
+      parts.push({ type: 'text', text: String(text).slice(cursor) });
+    }
+    return {
+      id: `block-${blockIndex}`,
+      text,
+      parts: parts.length ? parts : [{ type: 'text', text }],
+    };
   });
 }
 
@@ -593,10 +585,11 @@ export async function inspectWordTemplate(file) {
   const textNodes = textFiles.flatMap((fileItem) => extractTextNodes(fileItem.xml));
   const textBlocks = textFiles.flatMap((fileItem) => extractTextBlocks(fileItem.xml));
   const sentenceBlocks = textFiles.flatMap((fileItem) => extractSentenceBlocks(fileItem.xml));
-  const searchBlocks = uniqueBlocks([...sentenceBlocks, ...textBlocks, ...textNodes]);
+  const searchBlocks = uniqueBlocks(textBlocks.length ? textBlocks : [...sentenceBlocks, ...textNodes]);
   const text = searchBlocks.join('\n');
   const placeholders = extractPlaceholdersFromText(text);
   const detectedMatches = detectTemplateValueMatches(searchBlocks);
+  const previewBlocks = buildPreviewBlocks(searchBlocks, detectedMatches);
   const candidates = detectedMatches
     .map((match) => ({
       id: match.id,
@@ -613,6 +606,7 @@ export async function inspectWordTemplate(file) {
     placeholders,
     candidates,
     detectedMatches,
+    previewBlocks,
     hasPlaceholders: placeholders.length > 0,
   };
 }

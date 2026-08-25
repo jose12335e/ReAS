@@ -5,7 +5,6 @@ import {
   FileText,
   FolderOpen,
   Loader2,
-  Save,
   Sparkles,
   UploadCloud,
 } from 'lucide-react';
@@ -47,6 +46,7 @@ const DEFAULT_FIELD_KEYS = [
 ];
 
 const FIELD_LABELS = Object.fromEntries(WORD_LETTER_FIELDS.map((field) => [field.key, field.label]));
+const MANUAL_FIELD_KEY = '__manual';
 
 function compactReportLabel(report) {
   if (!report) return 'Reporte sin nombre';
@@ -116,6 +116,8 @@ export default function WordLettersPanel({
   const [scopeId, setScopeId] = useState('general');
   const [valueOverrides, setValueOverrides] = useState({});
   const [replacementMappings, setReplacementMappings] = useState({});
+  const [manualReplacementValues, setManualReplacementValues] = useState({});
+  const [selectedMatchId, setSelectedMatchId] = useState('');
   const [outputName, setOutputName] = useState('carta-reas');
   const [status, setStatus] = useState(null);
   const [generating, setGenerating] = useState(false);
@@ -130,10 +132,19 @@ export default function WordLettersPanel({
   const finalData = useMemo(() => ({ ...baseData, ...valueOverrides }), [baseData, valueOverrides]);
   const placeholders = useMemo(() => templateInfo?.placeholders ?? [], [templateInfo]);
   const detectedMatches = useMemo(() => templateInfo?.detectedMatches ?? [], [templateInfo]);
+  const previewBlocks = useMemo(() => templateInfo?.previewBlocks ?? [], [templateInfo]);
+  const selectedMatch = useMemo(
+    () => detectedMatches.find((match) => match.id === selectedMatchId) ?? detectedMatches[0] ?? null,
+    [detectedMatches, selectedMatchId],
+  );
   const fieldKeysToShow = useMemo(() => {
     const keys = placeholders.length ? placeholders : DEFAULT_FIELD_KEYS;
     return [...new Set(keys)];
   }, [placeholders]);
+  const numericReplacementFields = useMemo(
+    () => WORD_LETTER_FIELDS.filter((field) => /\d/.test(String(finalData[field.key] ?? ''))),
+    [finalData],
+  );
   const unknownPlaceholders = placeholders.filter((placeholder) => !(placeholder in baseData));
   const manualReplacementEntries = useMemo(
     () =>
@@ -144,19 +155,22 @@ export default function WordLettersPanel({
           const fallbackCandidate = templateInfo?.candidates?.find((candidate) => candidate.id === matchId);
           if (!detected && !fallbackCandidate) return null;
           const oldValue = detected?.oldValue ?? fallbackCandidate?.oldValue ?? fallbackCandidate?.value ?? matchId;
+          const manualValue = manualReplacementValues[matchId];
+          const nextValue = fieldKey === MANUAL_FIELD_KEY ? manualValue : manualValue || finalData[fieldKey] || '';
+          if (!nextValue) return null;
           return {
             from: detected?.replaceText ?? fallbackCandidate?.value ?? matchId,
             oldValue: detected?.oldValue ?? fallbackCandidate?.oldValue,
-            to: finalData[fieldKey] ?? '',
+            to: nextValue,
             fieldKey,
-            label: FIELD_LABELS[fieldKey] ?? fieldKey,
+            label: fieldKey === MANUAL_FIELD_KEY ? 'Valor manual' : FIELD_LABELS[fieldKey] ?? fieldKey,
             source: detected?.contextBefore ?? fallbackCandidate?.value ?? matchId,
             mode: detected ? 'Numero aprobado por el usuario' : 'Reemplazo asistido manual',
             auditOldValue: oldValue,
           };
         })
         .filter(Boolean),
-    [detectedMatches, finalData, replacementMappings, templateInfo?.candidates],
+    [detectedMatches, finalData, manualReplacementValues, replacementMappings, templateInfo?.candidates],
   );
   const activeReplacementEntries = useMemo(() => [...manualReplacementEntries], [manualReplacementEntries]);
   const replacementAuditEntries = useMemo(
@@ -198,12 +212,15 @@ export default function WordLettersPanel({
     setTemplateInfo(null);
     setValueOverrides({});
     setReplacementMappings({});
+    setManualReplacementValues({});
+    setSelectedMatchId('');
     setOutputName(file.name.replace(/\.docx$/i, '') || 'carta-reas');
     try {
       const info = await inspectWordTemplate(file);
       const savedMapping = loadTemplateMappings(file.name);
       setTemplateInfo(info);
       setReplacementMappings(savedMapping.replacements ?? {});
+      setSelectedMatchId(info.detectedMatches?.[0]?.id ?? '');
       setStatus({
         tone: info.hasPlaceholders ? 'emerald' : 'amber',
         message: info.hasPlaceholders
@@ -243,6 +260,30 @@ export default function WordLettersPanel({
       ...current,
       [candidateValue]: fieldKey,
     }));
+  }
+
+  function handleManualReplacementValue(matchId, value) {
+    setManualReplacementValues((current) => ({ ...current, [matchId]: value }));
+  }
+
+  function handleApproveSelectedMatch(fieldKey = null) {
+    if (!selectedMatch) return;
+    const selectedField = replacementMappings[selectedMatch.id];
+    const nextField = fieldKey ?? selectedField ?? selectedMatch.fieldKey ?? MANUAL_FIELD_KEY;
+    setReplacementMappings((current) => ({ ...current, [selectedMatch.id]: nextField }));
+    if (!manualReplacementValues[selectedMatch.id]) {
+      const suggested = nextField === MANUAL_FIELD_KEY ? selectedMatch.oldValue : finalData[nextField];
+      if (suggested) handleManualReplacementValue(selectedMatch.id, suggested);
+    }
+  }
+
+  function handleClearSelectedMatch() {
+    if (!selectedMatch) return;
+    setReplacementMappings((current) => {
+      const next = { ...current };
+      delete next[selectedMatch.id];
+      return next;
+    });
   }
 
   async function handleGenerateWord() {
@@ -454,6 +495,140 @@ export default function WordLettersPanel({
         </div>
 
         <div className="space-y-5">
+          {templateInfo ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                    <FileText className="h-4 w-4 text-teal-700" />
+                    Vista de la carta
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Haz clic en un numero resaltado para revisar el valor sugerido y aprobar el cambio.
+                  </p>
+                </div>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                  {activeReplacementEntries.length} aprobado(s)
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+                <div className="max-h-[620px] overflow-y-auto rounded-xl border border-slate-200 bg-slate-100 p-4">
+                  <div className="mx-auto min-h-[560px] max-w-3xl rounded-sm bg-white px-8 py-10 text-[15px] leading-8 text-slate-900 shadow-sm">
+                    {previewBlocks.length ? (
+                      previewBlocks.map((block) => (
+                        <p key={block.id} className="mb-4 whitespace-pre-wrap">
+                          {block.parts.map((part, index) =>
+                            part.type === 'number' && part.matchId ? (
+                              <button
+                                key={`${block.id}-${index}`}
+                                type="button"
+                                className={`mx-0.5 rounded-md px-1.5 py-0.5 font-semibold transition ${
+                                  replacementMappings[part.matchId]
+                                    ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300'
+                                    : selectedMatchId === part.matchId
+                                      ? 'bg-sky-100 text-sky-900 ring-2 ring-sky-300'
+                                      : 'bg-amber-100 text-amber-900 ring-1 ring-amber-200 hover:bg-amber-200'
+                                }`}
+                                onClick={() => setSelectedMatchId(part.matchId)}
+                              >
+                                {part.text}
+                              </button>
+                            ) : (
+                              <span key={`${block.id}-${index}`}>{part.text}</span>
+                            ),
+                          )}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-sm text-slate-500">Carga una plantilla para ver la carta aqui.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  {selectedMatch ? (
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-xs font-semibold uppercase text-slate-500">Texto antes del numero</div>
+                        <div className="mt-1 text-sm font-semibold leading-6 text-slate-900">
+                          {selectedMatch.contextBefore || 'Sin texto previo'}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-lg border border-rose-100 bg-white p-2">
+                          <div className="text-[11px] font-semibold uppercase text-rose-600">Actual</div>
+                          <div className="mt-1 break-words text-sm font-semibold text-rose-950">
+                            {selectedMatch.oldValue}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-emerald-100 bg-white p-2">
+                          <div className="text-[11px] font-semibold uppercase text-emerald-700">Sugerido</div>
+                          <div className="mt-1 break-words text-sm font-semibold text-emerald-950">
+                            {selectedMatch.fieldKey ? finalData[selectedMatch.fieldKey] || 'sin valor' : 'sin sugerencia'}
+                          </div>
+                        </div>
+                      </div>
+                      <label className="grid gap-1.5">
+                        <span className="text-xs font-semibold uppercase text-slate-500">Concepto / campo</span>
+                        <select
+                          className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                          value={replacementMappings[selectedMatch.id] ?? selectedMatch.fieldKey ?? ''}
+                          onChange={(event) => handleReplacementChange(selectedMatch.id, event.target.value)}
+                        >
+                          <option value="">No reemplazar</option>
+                          <option value={MANUAL_FIELD_KEY}>Valor manual</option>
+                          {numericReplacementFields.map((field) => (
+                            <option key={field.key} value={field.key}>
+                              {field.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="grid gap-1.5">
+                        <span className="text-xs font-semibold uppercase text-slate-500">Valor final</span>
+                        <input
+                          className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                          type="text"
+                          value={
+                            manualReplacementValues[selectedMatch.id] ??
+                            (selectedMatch.fieldKey ? finalData[selectedMatch.fieldKey] ?? '' : '')
+                          }
+                          onChange={(event) => handleManualReplacementValue(selectedMatch.id, event.target.value)}
+                        />
+                      </label>
+                      <div className="grid gap-2">
+                        <button
+                          className="inline-flex h-10 items-center justify-center rounded-lg bg-teal-700 px-3 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                          type="button"
+                          disabled={
+                            !replacementMappings[selectedMatch.id] &&
+                            !selectedMatch.fieldKey &&
+                            !manualReplacementValues[selectedMatch.id]
+                          }
+                          onClick={() => handleApproveSelectedMatch()}
+                        >
+                          Aprobar cambio
+                        </button>
+                        <button
+                          className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                          type="button"
+                          onClick={handleClearSelectedMatch}
+                        >
+                          Dejar igual
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900">
+                      Selecciona un numero resaltado en la carta para revisar el cambio.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -511,80 +686,6 @@ export default function WordLettersPanel({
                 {replacementAuditEntries.map((item) => (
                   <ReplacementAuditRow key={item.id} item={item} />
                 ))}
-              </div>
-            </div>
-          ) : null}
-
-          {templateInfo?.candidates?.length ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
-                    <Save className="h-4 w-4 text-teal-700" />
-                    Reemplazos asistidos
-                  </div>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">
-                    ReAS solo reemplazara numeros. Revisa el texto anterior y aprueba el campo correcto para cada valor.
-                  </p>
-                </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {activeReplacementEntries.length} activo(s)
-                </span>
-              </div>
-              <div className="mt-4 max-h-[520px] space-y-2 overflow-y-auto pr-1">
-                {templateInfo.candidates.map((candidate) => {
-                  const suggestedValue = candidate.fieldKey ? finalData[candidate.fieldKey] : '';
-                  return (
-                    <div
-                      key={candidate.id}
-                      className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 lg:grid-cols-[minmax(0,1fr)_130px_130px_240px]"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-[11px] font-semibold uppercase text-slate-500">Texto antes del numero</div>
-                        <div className="mt-1 text-sm font-semibold text-slate-800">
-                          {candidate.contextBefore || candidate.value}
-                        </div>
-                        {candidate.contextAfter ? (
-                          <div className="mt-1 text-xs text-slate-500">Despues: {candidate.contextAfter}</div>
-                        ) : null}
-                        {candidate.label ? (
-                          <div className="mt-2 inline-flex rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-700">
-                            Sugerido: {candidate.label}
-                          </div>
-                        ) : null}
-                      </div>
-                      <div className="rounded-lg border border-rose-100 bg-white p-2">
-                        <div className="text-[11px] font-semibold uppercase text-rose-600">Numero actual</div>
-                        <div className="mt-1 break-words text-sm font-semibold text-rose-950">
-                          {candidate.oldValue || 'vacio'}
-                        </div>
-                      </div>
-                      <div className="rounded-lg border border-emerald-100 bg-white p-2">
-                        <div className="text-[11px] font-semibold uppercase text-emerald-700">Nuevo sugerido</div>
-                        <div className="mt-1 break-words text-sm font-semibold text-emerald-950">
-                          {suggestedValue || 'sin valor'}
-                        </div>
-                      </div>
-                      <div className="grid gap-1">
-                        <select
-                          className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
-                          value={replacementMappings[candidate.id] ?? ''}
-                          onChange={(event) => handleReplacementChange(candidate.id, event.target.value)}
-                        >
-                          <option value="">No reemplazar</option>
-                          {WORD_LETTER_FIELDS.map((field) => (
-                            <option key={field.key} value={field.key}>
-                              {field.label}
-                            </option>
-                          ))}
-                        </select>
-                        {replacementMappings[candidate.id] ? (
-                          <span className="text-[11px] font-semibold text-teal-700">Aprobado para reemplazo</span>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             </div>
           ) : null}
