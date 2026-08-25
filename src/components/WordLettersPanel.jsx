@@ -138,7 +138,7 @@ export default function WordLettersPanel({
       detectedMatches
         .filter((match) => !replacementMappings[match.text] && finalData[match.fieldKey] != null)
         .map((match) => ({
-          from: match.text,
+          from: match.replaceText ?? match.text,
           oldValue: match.oldValue,
           to: finalData[match.fieldKey] ?? '',
           fieldKey: match.fieldKey,
@@ -153,10 +153,10 @@ export default function WordLettersPanel({
       Object.entries(replacementMappings)
         .filter(([, fieldKey]) => fieldKey)
         .map(([from, fieldKey]) => {
-          const detected = detectedMatches.find((match) => match.text === from);
+          const detected = detectedMatches.find((match) => match.text === from || match.replaceText === from);
           const oldValue = detected?.oldValue ?? from;
           return {
-            from,
+            from: detected?.replaceText ?? from,
             oldValue: detected?.oldValue,
             to: finalData[fieldKey] ?? '',
             fieldKey,

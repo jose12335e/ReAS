@@ -50,18 +50,18 @@ export const WORD_LETTER_FIELDS = [
 ];
 
 const FIELD_MATCH_ALIASES = [
-  ['porcentaje_cumplimiento_horas', ['porcentaje de cumplimiento horas', '% de horas trabajadas', 'cumplimiento horas']],
-  ['porcentaje_cumplimiento_dias', ['porcentaje de cumplimiento dias', '% de dias trabajados', 'cumplimiento dias']],
-  ['tiempo_general_eventualidades', ['tiempo general acumulado', 'tiempo acumulado de eventualidades']],
-  ['tiempo_no_justificado', ['tiempo total no justificado', 'tiempo no trabajado no justificado']],
-  ['tiempo_justificado', ['tiempo acumulado justificado', 'tiempo no trabajado justificado']],
+  ['porcentaje_cumplimiento_horas', ['porcentaje de cumplimiento horas', '% de horas trabajadas', 'cumplimiento horas', 'cumplimiento. horas']],
+  ['porcentaje_cumplimiento_dias', ['porcentaje de cumplimiento dias', '% de dias trabajados', 'cumplimiento dias', 'cumplimiento. dias']],
+  ['tiempo_general_eventualidades', ['tiempo general acumulado', 'tiempo acumulado de eventualidades', 'eventualidades justificadas y no justificadas']],
+  ['tiempo_no_justificado', ['tiempo total no justificado', 'tiempo no trabajado no justificado', 'eventualidades no justificadas']],
+  ['tiempo_justificado', ['tiempo acumulado justificado', 'tiempo no trabajado justificado', 'eventualidades justificadas registradas']],
   ['tiempo_salida_temprana', ['tiempo de salidas tempranas acumulado', 'tiempo salida temprana']],
   ['tiempo_tardanza', ['tiempo de tardanza acumulado', 'tiempo tardanza']],
   ['tiempo_ausencia', ['tiempo de ausencias acumulado', 'tiempo ausencia']],
-  ['horas_a_trabajar', ['horas a trabajar', 'horas esperadas']],
-  ['horas_trabajadas', ['horas trabajadas', 'horas reconocidas', 'horas laboradas']],
-  ['dias_a_trabajar', ['dias a trabajar', 'dias laborables exigibles']],
-  ['dias_trabajados', ['dias trabajados', 'dias laborados']],
+  ['horas_a_trabajar', ['horas a trabajar', 'horas esperadas', 'total horas a trabajar']],
+  ['horas_trabajadas', ['horas trabajadas', 'horas reconocidas', 'horas laboradas', 'tiempo trabajado']],
+  ['dias_a_trabajar', ['dias a trabajar', 'dias laborables exigibles', 'dias asignados']],
+  ['dias_trabajados', ['dias trabajados', 'dias laborados', 'dias efectivamente trabajados']],
   ['tasa_ausentismo', ['tasa de ausentismo', 'taza de ausentismo', '% de ausentismo', 'ausentismo']],
   ['salidas_tempranas', ['salidas tempranas', 'salidas anticipadas']],
   ['tardanzas', ['tardanzas']],
@@ -191,6 +191,27 @@ function extractTextNodes(xml = '') {
     .filter(Boolean);
 }
 
+function collapseText(value = '') {
+  return String(value).replace(/\s+/g, ' ').trim();
+}
+
+function extractTextBlocks(xml = '') {
+  return [...String(xml).matchAll(/<w:p[\s\S]*?<\/w:p>/g)]
+    .map((match) => collapseText(extractTextNodes(match[0]).join(' ')))
+    .filter(Boolean);
+}
+
+function uniqueBlocks(values = []) {
+  const seen = new Set();
+  return values.filter((value) => {
+    const text = collapseText(value);
+    const key = normalizeText(text);
+    if (!text || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function shouldSuggestText(value = '') {
   const text = String(value).trim();
   if (text.length < 2 || text.length > 140) return false;
@@ -232,15 +253,42 @@ function extractReplacementValue(text = '') {
   return values.at(-1) ?? '';
 }
 
-function detectTemplateValueMatches(textNodes = []) {
+function isLikelyValueOnly(text = '') {
+  const raw = String(text).trim();
+  return /^-?\d{1,8}(?::\d{2}){1,2}$/.test(raw) ||
+    /^-?\d{1,8}(?:[.,]\d+)?\s*%$/.test(raw) ||
+    /^-?\d{1,8}(?:[.,]\d+)?$/.test(raw);
+}
+
+function inferContextualField(blocks = [], index) {
+  const current = normalizeText(blocks[index]);
+  const previous = normalizeText(blocks.slice(Math.max(0, index - 3), index).join(' '));
+  const context = `${previous} ${current}`;
+  if (!current.includes('representando') && !current.includes('cumplimiento')) return null;
+  if (context.includes('hora')) return ['porcentaje_cumplimiento_horas'];
+  if (context.includes('dia')) return ['porcentaje_cumplimiento_dias'];
+  return null;
+}
+
+function detectTemplateValueMatches(blocks = []) {
   const seen = new Set();
-  return textNodes.flatMap((text, index) => {
-    const fieldMatch = findFieldMatch(text);
+  return blocks.flatMap((text, index) => {
+    const fieldMatch = findFieldMatch(text) ?? inferContextualField(blocks, index);
     if (!fieldMatch) return [];
-    const oldValue = extractReplacementValue(text);
+    let oldValue = extractReplacementValue(text);
+    let replacementText = text;
+    let sourceText = text;
+    if (!oldValue) {
+      const nextValueBlock = blocks
+        .slice(index + 1, index + 4)
+        .find((candidate) => isLikelyValueOnly(candidate) || extractReplacementValue(candidate));
+      oldValue = extractReplacementValue(nextValueBlock);
+      replacementText = nextValueBlock || text;
+      sourceText = `${text} ${nextValueBlock || ''}`.trim();
+    }
     if (!oldValue) return [];
     const [fieldKey] = fieldMatch;
-    const key = `${fieldKey}::${text}::${oldValue}`;
+    const key = `${fieldKey}::${sourceText}::${oldValue}`;
     if (seen.has(key)) return [];
     seen.add(key);
     return [
@@ -248,7 +296,8 @@ function detectTemplateValueMatches(textNodes = []) {
         id: `auto-${index}-${fieldKey}`,
         fieldKey,
         label: WORD_LETTER_FIELDS.find((field) => field.key === fieldKey)?.label ?? fieldKey,
-        text,
+        text: sourceText,
+        replaceText: replacementText,
         oldValue,
       },
     ];
@@ -389,10 +438,12 @@ export async function inspectWordTemplate(file) {
   const zip = new PizZip(arrayBuffer);
   const textFiles = readZipTextFiles(zip);
   const textNodes = textFiles.flatMap((fileItem) => extractTextNodes(fileItem.xml));
-  const text = textNodes.join('\n');
+  const textBlocks = textFiles.flatMap((fileItem) => extractTextBlocks(fileItem.xml));
+  const searchBlocks = uniqueBlocks([...textBlocks, ...textNodes]);
+  const text = searchBlocks.join('\n');
   const placeholders = [...new Set([...text.matchAll(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g)].map((match) => match[1]))];
-  const detectedMatches = detectTemplateValueMatches(textNodes);
-  const candidates = [...new Set(textNodes.filter(shouldSuggestText))]
+  const detectedMatches = detectTemplateValueMatches(searchBlocks);
+  const candidates = [...new Set(searchBlocks.filter(shouldSuggestText))]
     .slice(0, 80)
     .map((value, index) => ({ id: `candidate-${index}`, value }));
   return {
@@ -437,11 +488,18 @@ function applyXmlReplacements(zip, replacements = []) {
     let xml = file.asText();
     activeReplacements.forEach((replacement) => {
       const from = xmlEscape(replacement.from);
-      if (!from) return;
       const nextText = replacement.oldValue
         ? String(replacement.from).replace(String(replacement.oldValue), String(replacement.to ?? ''))
         : String(replacement.to ?? '');
-      xml = xml.split(from).join(xmlEscape(nextText));
+      const nextXml = xmlEscape(nextText);
+      if (from && xml.includes(from)) {
+        xml = xml.split(from).join(nextXml);
+        return;
+      }
+      if (replacement.oldValue) {
+        const oldValue = xmlEscape(replacement.oldValue);
+        if (oldValue) xml = xml.split(oldValue).join(xmlEscape(replacement.to ?? ''));
+      }
     });
     zip.file(path, xml);
   });
