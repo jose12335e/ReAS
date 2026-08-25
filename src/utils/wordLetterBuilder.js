@@ -554,19 +554,26 @@ function replaceVisibleText(xml = '', replacement = {}) {
   return xml;
 }
 
-function applyXmlReplacements(zip, replacements = []) {
+function applyAssistedReplacementPlaceholders(zip, replacements = []) {
   const activeReplacements = replacements.filter((item) => item.from && item.to != null);
-  if (!activeReplacements.length) return;
+  const assistedData = {};
+  if (!activeReplacements.length) return assistedData;
   Object.keys(zip.files).forEach((path) => {
     if (!DOCX_TEXT_FILES.test(path)) return;
     const file = zip.file(path);
     if (!file) return;
     let xml = file.asText();
-    activeReplacements.forEach((replacement) => {
-      xml = replaceVisibleText(xml, replacement);
+    activeReplacements.forEach((replacement, index) => {
+      const key = `reas_auto_${index}`;
+      assistedData[key] = String(replacement.to ?? '');
+      xml = replaceVisibleText(xml, {
+        ...replacement,
+        to: `{{${key}}}`,
+      });
     });
     zip.file(path, xml);
   });
+  return assistedData;
 }
 
 export async function generateWordLetter({ templateFile, data, replacements = [], outputName = 'carta-reas' }) {
@@ -574,6 +581,7 @@ export async function generateWordLetter({ templateFile, data, replacements = []
   if (!/\.docx$/i.test(templateFile.name)) throw new Error('Solo se permiten plantillas .docx.');
   const arrayBuffer = await templateFile.arrayBuffer();
   const zip = new PizZip(arrayBuffer);
+  const assistedData = applyAssistedReplacementPlaceholders(zip, replacements);
   const doc = new Docxtemplater(zip, {
     paragraphLoop: true,
     linebreaks: true,
@@ -585,9 +593,8 @@ export async function generateWordLetter({ templateFile, data, replacements = []
       return '';
     },
   });
-  doc.render(data);
+  doc.render({ ...data, ...assistedData });
   const renderedZip = doc.getZip();
-  applyXmlReplacements(renderedZip, replacements);
   const blob = renderedZip.generate({
     type: 'blob',
     mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
