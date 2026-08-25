@@ -201,6 +201,25 @@ function extractTextBlocks(xml = '') {
     .filter(Boolean);
 }
 
+function extractSentenceBlocks(xml = '') {
+  const sentences = [];
+  let buffer = '';
+  extractTextNodes(xml).forEach((node) => {
+    buffer = collapseText([buffer, node].filter(Boolean).join(' '));
+    let periodIndex = buffer.indexOf('.');
+    while (periodIndex >= 0) {
+      const sentence = collapseText(buffer.slice(0, periodIndex + 1));
+      if (sentence) sentences.push(sentence);
+      buffer = collapseText(buffer.slice(periodIndex + 1));
+      periodIndex = buffer.indexOf('.');
+    }
+  });
+  if (buffer && extractReplacementValue(buffer)) {
+    sentences.push(buffer);
+  }
+  return sentences;
+}
+
 function uniqueBlocks(values = []) {
   const seen = new Set();
   return values.filter((value) => {
@@ -439,7 +458,8 @@ export async function inspectWordTemplate(file) {
   const textFiles = readZipTextFiles(zip);
   const textNodes = textFiles.flatMap((fileItem) => extractTextNodes(fileItem.xml));
   const textBlocks = textFiles.flatMap((fileItem) => extractTextBlocks(fileItem.xml));
-  const searchBlocks = uniqueBlocks([...textBlocks, ...textNodes]);
+  const sentenceBlocks = textFiles.flatMap((fileItem) => extractSentenceBlocks(fileItem.xml));
+  const searchBlocks = uniqueBlocks([...sentenceBlocks, ...textBlocks, ...textNodes]);
   const text = searchBlocks.join('\n');
   const placeholders = [...new Set([...text.matchAll(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g)].map((match) => match[1]))];
   const detectedMatches = detectTemplateValueMatches(searchBlocks);
