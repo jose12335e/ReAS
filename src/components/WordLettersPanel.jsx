@@ -78,6 +78,26 @@ function StatusMessage({ tone = 'slate', children }) {
   return <div className={`rounded-xl border p-3 text-sm font-medium ${tones[tone]}`}>{children}</div>;
 }
 
+function ReplacementAuditRow({ item }) {
+  return (
+    <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[minmax(0,1fr)_minmax(120px,0.45fr)_minmax(120px,0.45fr)]">
+      <div className="min-w-0">
+        <div className="text-xs font-semibold uppercase text-slate-500">{item.label}</div>
+        <div className="mt-1 truncate text-sm font-semibold text-slate-950">{item.source}</div>
+        <div className="mt-1 text-xs text-slate-500">{item.mode}</div>
+      </div>
+      <div className="rounded-lg border border-rose-100 bg-rose-50 p-2">
+        <div className="text-[11px] font-semibold uppercase text-rose-600">Viejo</div>
+        <div className="mt-1 break-words text-sm font-semibold text-rose-950">{item.oldValue || 'vacio'}</div>
+      </div>
+      <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-2">
+        <div className="text-[11px] font-semibold uppercase text-emerald-700">Nuevo</div>
+        <div className="mt-1 break-words text-sm font-semibold text-emerald-950">{item.newValue || 'vacio'}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function WordLettersPanel({
   result,
   dghCode,
@@ -106,21 +126,72 @@ export default function WordLettersPanel({
     [activeUser, dghCode, selectedScope, sourceResult],
   );
   const finalData = useMemo(() => ({ ...baseData, ...valueOverrides }), [baseData, valueOverrides]);
-  const placeholders = templateInfo?.placeholders ?? [];
+  const placeholders = useMemo(() => templateInfo?.placeholders ?? [], [templateInfo]);
+  const detectedMatches = useMemo(() => templateInfo?.detectedMatches ?? [], [templateInfo]);
   const fieldKeysToShow = useMemo(() => {
     const keys = placeholders.length ? placeholders : DEFAULT_FIELD_KEYS;
     return [...new Set(keys)];
   }, [placeholders]);
   const unknownPlaceholders = placeholders.filter((placeholder) => !(placeholder in baseData));
-  const activeReplacementEntries = useMemo(
+  const automaticReplacementEntries = useMemo(
+    () =>
+      detectedMatches
+        .filter((match) => !replacementMappings[match.text] && finalData[match.fieldKey] != null)
+        .map((match) => ({
+          from: match.text,
+          oldValue: match.oldValue,
+          to: finalData[match.fieldKey] ?? '',
+          fieldKey: match.fieldKey,
+          label: match.label,
+          source: match.text,
+          mode: 'Detectado automaticamente por comparacion Word vs reporte',
+        })),
+    [detectedMatches, finalData, replacementMappings],
+  );
+  const manualReplacementEntries = useMemo(
     () =>
       Object.entries(replacementMappings)
         .filter(([, fieldKey]) => fieldKey)
-        .map(([from, fieldKey]) => ({
-          from,
-          to: finalData[fieldKey] ?? '',
-        })),
-    [finalData, replacementMappings],
+        .map(([from, fieldKey]) => {
+          const detected = detectedMatches.find((match) => match.text === from);
+          const oldValue = detected?.oldValue ?? from;
+          return {
+            from,
+            oldValue: detected?.oldValue,
+            to: finalData[fieldKey] ?? '',
+            fieldKey,
+            label: FIELD_LABELS[fieldKey] ?? fieldKey,
+            source: from,
+            mode: detected ? 'Reemplazo asistido del valor detectado' : 'Reemplazo asistido del texto completo',
+            auditOldValue: oldValue,
+          };
+        }),
+    [detectedMatches, finalData, replacementMappings],
+  );
+  const activeReplacementEntries = useMemo(
+    () => [...automaticReplacementEntries, ...manualReplacementEntries],
+    [automaticReplacementEntries, manualReplacementEntries],
+  );
+  const replacementAuditEntries = useMemo(
+    () => [
+      ...placeholders.map((fieldKey) => ({
+        id: `placeholder-${fieldKey}`,
+        label: FIELD_LABELS[fieldKey] ?? fieldKey,
+        source: `{{${fieldKey}}}`,
+        mode: 'Campo de plantilla',
+        oldValue: `{{${fieldKey}}}`,
+        newValue: finalData[fieldKey] ?? '',
+      })),
+      ...activeReplacementEntries.map((entry, index) => ({
+        id: `replacement-${index}-${entry.fieldKey}`,
+        label: entry.label,
+        source: entry.source,
+        mode: entry.mode,
+        oldValue: entry.auditOldValue ?? entry.oldValue ?? entry.from,
+        newValue: entry.to,
+      })),
+    ],
+    [activeReplacementEntries, finalData, placeholders],
   );
 
   useEffect(() => {
@@ -150,7 +221,7 @@ export default function WordLettersPanel({
         tone: info.hasPlaceholders ? 'emerald' : 'amber',
         message: info.hasPlaceholders
           ? `Plantilla lista: ${info.placeholders.length} campo(s) {{ }} detectado(s).`
-          : 'La plantilla no tiene campos {{ }}. Puedes usar reemplazos detectados o agregar campos en Word.',
+          : `Plantilla en modo asistido: ${info.detectedMatches.length} valor(es) detectado(s) para comparar.`,
       });
     } catch (error) {
       setStatus({ tone: 'rose', message: error?.message || 'No se pudo leer la plantilla Word.' });
@@ -292,10 +363,8 @@ export default function WordLettersPanel({
                   <div className="mt-1 text-lg font-semibold text-slate-950">{templateInfo.candidates.length}</div>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="text-xs font-semibold uppercase text-slate-500">Modo</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-950">
-                    {placeholders.length ? 'Campos {{ }}' : 'Asistido'}
-                  </div>
+                  <div className="text-xs font-semibold uppercase text-slate-500">Valores comparados</div>
+                  <div className="mt-1 text-lg font-semibold text-slate-950">{detectedMatches.length}</div>
                 </div>
               </div>
             ) : null}
@@ -428,6 +497,30 @@ export default function WordLettersPanel({
             </div>
           </div>
 
+          {replacementAuditEntries.length ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                    <CheckCircle2 className="h-4 w-4 text-teal-700" />
+                    Valores que se reemplazaran
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Cada cambio muestra exactamente el valor viejo y el valor nuevo antes de generar la carta.
+                  </p>
+                </div>
+                <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700">
+                  {replacementAuditEntries.length} cambio(s)
+                </span>
+              </div>
+              <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                {replacementAuditEntries.map((item) => (
+                  <ReplacementAuditRow key={item.id} item={item} />
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           {templateInfo?.candidates?.length ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/70">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -451,18 +544,25 @@ export default function WordLettersPanel({
                     className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-[minmax(0,1fr)_240px]"
                   >
                     <div className="min-w-0 text-sm font-medium text-slate-700">{candidate.value}</div>
-                    <select
-                      className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
-                      value={replacementMappings[candidate.value] ?? ''}
-                      onChange={(event) => handleReplacementChange(candidate.value, event.target.value)}
-                    >
-                      <option value="">No reemplazar</option>
-                      {WORD_LETTER_FIELDS.map((field) => (
-                        <option key={field.key} value={field.key}>
-                          {field.label}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="grid gap-1">
+                      <select
+                        className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                        value={replacementMappings[candidate.value] ?? ''}
+                        onChange={(event) => handleReplacementChange(candidate.value, event.target.value)}
+                      >
+                        <option value="">Auto / no manual</option>
+                        {WORD_LETTER_FIELDS.map((field) => (
+                          <option key={field.key} value={field.key}>
+                            {field.label}
+                          </option>
+                        ))}
+                      </select>
+                      {detectedMatches.some((match) => match.text === candidate.value) ? (
+                        <span className="text-[11px] font-semibold text-teal-700">
+                          Detectado automaticamente
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 ))}
               </div>
