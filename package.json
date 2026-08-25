@@ -17,9 +17,11 @@
     "@tailwindcss/vite": "^4.2.4",
     "@tanstack/react-table": "^8.21.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "docxtemplater": "^3.69.3",
     "exceljs": "^4.4.0",
     "jszip": "^3.10.1",
     "lucide-react": "^1.14.0",
+    "pizzip": "^3.2.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "recharts": "^3.8.1",
@@ -27,5 +29,12 @@
     "vite": "^8.0.11",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.13"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.9.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.4",
+    "globals": "^17.11.0"
   }
 }

@@ -11,6 +11,7 @@ import {
   HardDrive,
   Loader2,
   LogOut,
+  Mail,
   Play,
   Save,
   Settings,
@@ -66,6 +67,7 @@ const EmployeeAlerts = lazy(() => import('../components/EmployeeAlerts.jsx'));
 const ReportsPanel = lazy(() => import('../components/ReportsPanel.jsx'));
 const ResultsExplorer = lazy(() => import('../components/ResultsExplorer.jsx'));
 const RulesPanel = lazy(() => import('../components/RulesPanel.jsx'));
+const WordLettersPanel = lazy(() => import('../components/WordLettersPanel.jsx'));
 
 function PanelLoading() {
   return (
@@ -1269,6 +1271,18 @@ export default function Dashboard({ activeUser, onLogout }) {
     }
   }
 
+  async function loadLocalReportForLetters(reportId) {
+    const handle = localDatabaseHandleRef.current;
+    if (!handle || !reportId) {
+      throw new Error('Conecta la base local y selecciona un reporte.');
+    }
+    const hasPermission = await verifyDirectoryPermission(handle, false);
+    if (!hasPermission) {
+      throw new Error('La base local requiere permiso de lectura. Pulsa Base local para reconectar.');
+    }
+    return loadLocalReport(handle, reportId);
+  }
+
   function handleDisconnectLocalDatabase() {
     localDatabaseHandleRef.current = null;
     clearLocalDatabaseHandle().catch(() => {});
@@ -1382,6 +1396,13 @@ export default function Dashboard({ activeUser, onLogout }) {
       disabled: !result,
     },
     {
+      id: 'letters',
+      label: 'Cartas',
+      description: 'Plantillas Word con resultados',
+      icon: Mail,
+      disabled: !result && !localDatabaseState.connected,
+    },
+    {
       id: 'alerts',
       label: 'Alertas',
       description: 'Casos críticos por área',
@@ -1411,6 +1432,10 @@ export default function Dashboard({ activeUser, onLogout }) {
     reports: {
       title: 'Reportes',
       subtitle: 'Genera el Excel institucional con trazabilidad, tablas y resúmenes.',
+    },
+    letters: {
+      title: 'Cartas Word',
+      subtitle: 'Alimenta cartas institucionales con resultados consolidados del reporte.',
     },
     alerts: {
       title: 'Alertas',
@@ -2168,6 +2193,16 @@ export default function Dashboard({ activeUser, onLogout }) {
             hasPendingAudit={hasPendingAudit}
             reportOptions={{ dghCode, generatedBy: activeUser }}
             filename={exportFilename}
+          />
+        ) : null}
+
+        {activeTab === 'letters' ? (
+          <WordLettersPanel
+            result={result}
+            dghCode={dghCode}
+            activeUser={activeUser}
+            localDatabaseState={localDatabaseState}
+            onLoadLocalReport={loadLocalReportForLetters}
           />
         ) : null}
 
