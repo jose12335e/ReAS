@@ -498,6 +498,62 @@ export function saveTemplateMappings(templateName = '', mapping = {}) {
   }
 }
 
+function buildTextNodes(xml = '') {
+  return [...String(xml).matchAll(/<w:t([^>]*)>([\s\S]*?)<\/w:t>/g)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+    open: `<w:t${match[1]}>`,
+    close: '</w:t>',
+    text: xmlUnescape(match[2]),
+    nextText: xmlUnescape(match[2]),
+  }));
+}
+
+function serializeTextNodes(xml = '', nodes = []) {
+  if (!nodes.some((node) => node.text !== node.nextText)) return xml;
+  let output = '';
+  let cursor = 0;
+  nodes.forEach((node) => {
+    output += xml.slice(cursor, node.start);
+    output += `${node.open}${xmlEscape(node.nextText)}${node.close}`;
+    cursor = node.end;
+  });
+  return `${output}${xml.slice(cursor)}`;
+}
+
+function replaceVisibleText(xml = '', replacement = {}) {
+  const nodes = buildTextNodes(xml);
+  const fromText = collapseText(replacement.from ?? '');
+  const oldValue = String(replacement.oldValue ?? '');
+  const nextValue = String(replacement.to ?? '');
+  const normalizedFrom = normalizeText(fromText);
+  if (!nodes.length || (!fromText && !oldValue)) return xml;
+
+  for (let startIndex = 0; startIndex < nodes.length; startIndex += 1) {
+    let context = '';
+    for (let endIndex = startIndex; endIndex < Math.min(nodes.length, startIndex + 18); endIndex += 1) {
+      context = collapseText([context, nodes[endIndex].text].filter(Boolean).join(' '));
+      const normalizedContext = normalizeText(context);
+      const hasContext = normalizedFrom && normalizedContext.includes(normalizedFrom);
+      const hasSingleValueContext = !normalizedFrom && oldValue && nodes[endIndex].text.includes(oldValue);
+      if (!hasContext && !hasSingleValueContext) continue;
+
+      if (!oldValue) {
+        nodes[endIndex].nextText = nodes[endIndex].text.replace(replacement.from, nextValue);
+        return serializeTextNodes(xml, nodes);
+      }
+
+      for (let replaceIndex = startIndex; replaceIndex <= endIndex; replaceIndex += 1) {
+        if (!nodes[replaceIndex].text.includes(oldValue)) continue;
+        nodes[replaceIndex].nextText = nodes[replaceIndex].text.replace(oldValue, nextValue);
+        return serializeTextNodes(xml, nodes);
+      }
+    }
+  }
+
+  return xml;
+}
+
 function applyXmlReplacements(zip, replacements = []) {
   const activeReplacements = replacements.filter((item) => item.from && item.to != null);
   if (!activeReplacements.length) return;
@@ -507,19 +563,7 @@ function applyXmlReplacements(zip, replacements = []) {
     if (!file) return;
     let xml = file.asText();
     activeReplacements.forEach((replacement) => {
-      const from = xmlEscape(replacement.from);
-      const nextText = replacement.oldValue
-        ? String(replacement.from).replace(String(replacement.oldValue), String(replacement.to ?? ''))
-        : String(replacement.to ?? '');
-      const nextXml = xmlEscape(nextText);
-      if (from && xml.includes(from)) {
-        xml = xml.split(from).join(nextXml);
-        return;
-      }
-      if (replacement.oldValue) {
-        const oldValue = xmlEscape(replacement.oldValue);
-        if (oldValue) xml = xml.split(oldValue).join(xmlEscape(replacement.to ?? ''));
-      }
+      xml = replaceVisibleText(xml, replacement);
     });
     zip.file(path, xml);
   });
