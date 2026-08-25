@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   BarChart3,
   CalendarDays,
+  ChevronDown,
   CheckCircle2,
   Database,
   FileCheck2,
@@ -1444,7 +1445,7 @@ export default function Dashboard({ activeUser, onLogout }) {
   };
   const currentPage = pageMeta[activeTab] ?? pageMeta.dashboard;
   const headerActions = (
-    <div className="grid w-full gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:grid-cols-2">
+    <div className="grid w-full gap-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3 lg:grid-cols-[210px_minmax(180px,1fr)_minmax(180px,1fr)_auto] lg:items-end">
       <label className="grid gap-1.5">
         <span className="text-xs font-semibold uppercase text-slate-500">Horario base</span>
         <select
@@ -1494,9 +1495,9 @@ export default function Dashboard({ activeUser, onLogout }) {
       </label>
       <div className="grid gap-2">
         <span className="text-xs font-semibold uppercase text-slate-500">Acciones rápidas</span>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 lg:flex-nowrap">
           <button
-            className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-teal-200 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-teal-200 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
             type="button"
             disabled={isBusy}
             onClick={handleNewReport}
@@ -1505,7 +1506,7 @@ export default function Dashboard({ activeUser, onLogout }) {
             Nuevo
           </button>
           <button
-            className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-xs font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
+            className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
               saveSession
                 ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
                 : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
@@ -1520,7 +1521,7 @@ export default function Dashboard({ activeUser, onLogout }) {
             {saveSession ? 'Guardando' : 'No guardar'}
           </button>
           <button
-            className="inline-flex h-10 items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-800 shadow-sm transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-800 shadow-sm transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
             type="button"
             disabled={isBusy || localDatabaseState.busy}
             onClick={handleChooseLocalDatabase}
@@ -1536,7 +1537,7 @@ export default function Dashboard({ activeUser, onLogout }) {
   return (
     <main className="min-h-screen bg-[#eef3f7]">
       <button
-        className="fixed bottom-5 right-5 z-50 inline-flex h-12 items-center gap-2 rounded-full bg-slate-950 px-5 text-sm font-semibold text-white shadow-xl shadow-slate-900/20 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+        className="fixed bottom-5 right-5 z-50 inline-flex h-12 items-center gap-2 rounded-full bg-slate-950 px-5 text-sm font-semibold text-white shadow-xl shadow-slate-900/20 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400 sm:hidden"
         type="button"
         disabled={isBusy || localDatabaseState.busy}
         onClick={handleChooseLocalDatabase}
@@ -1744,10 +1745,10 @@ export default function Dashboard({ activeUser, onLogout }) {
         </header>
 
         <section
-          className={`rounded-lg border px-4 py-2 text-xs shadow-sm ${
+          className={`rounded-lg border px-4 py-2 text-xs ${
             saveSession
-              ? 'border-amber-200 bg-amber-50 text-amber-950'
-              : 'border-emerald-200 bg-emerald-50 text-emerald-950'
+              ? 'border-amber-100 bg-amber-50/60 text-amber-950'
+              : 'border-emerald-100 bg-emerald-50/60 text-emerald-950'
           }`}
         >
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -1767,7 +1768,32 @@ export default function Dashboard({ activeUser, onLogout }) {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 text-sm shadow-sm shadow-slate-200/70">
+        <details className="group rounded-lg border border-slate-200 bg-white text-sm shadow-sm shadow-slate-200/70">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span
+                className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${
+                  localDatabaseState.connected
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'bg-slate-100 text-slate-500'
+                }`}
+              >
+                <Database className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <div className="text-xs font-semibold uppercase text-slate-500">Base local</div>
+                <div className="truncate text-sm font-semibold text-slate-950">
+                  {localDatabaseState.connected
+                    ? `${localDatabaseState.name} · ${localDatabaseState.reports.length} reporte(s)`
+                    : localDatabaseState.supported
+                      ? 'Sin carpeta conectada'
+                      : 'No disponible en este navegador'}
+                </div>
+              </div>
+            </div>
+            <ChevronDown className="h-4 w-4 shrink-0 text-slate-400 transition group-open:rotate-180" />
+          </summary>
+          <div className="border-t border-slate-100 px-4 py-4">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex min-w-0 items-start gap-3">
               <span
@@ -1874,7 +1900,8 @@ export default function Dashboard({ activeUser, onLogout }) {
               ) : null}
             </div>
           </div>
-        </section>
+          </div>
+        </details>
 
         <nav className="hidden gap-3 md:grid-cols-2 xl:grid-cols-6" aria-label="Secciones del sistema">
           {tabs.map((tab) => (

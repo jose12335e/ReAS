@@ -8,9 +8,9 @@ export default function AppSidebar({
   onLogout,
 }) {
   return (
-    <aside className="hidden border-r border-slate-200 bg-white px-4 py-5 shadow-sm shadow-slate-200/70 lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:flex lg:h-screen lg:w-72 lg:flex-col lg:overflow-y-auto">
-      <div className="flex items-center gap-3 px-2">
-        <span className="grid h-11 w-11 place-items-center rounded-2xl bg-teal-700 text-white shadow-sm">
+    <aside className="hidden border-r border-slate-200 bg-white px-4 py-5 shadow-sm shadow-slate-200/70 lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:flex lg:h-screen lg:w-72 lg:flex-col lg:overflow-hidden">
+      <div className="flex shrink-0 items-center gap-3 px-2">
+        <span className="grid h-11 w-11 place-items-center rounded-lg bg-slate-950 text-white shadow-sm">
           <ShieldCheck className="h-6 w-6" />
         </span>
         <div>
@@ -19,16 +19,16 @@ export default function AppSidebar({
         </div>
       </div>
 
-      <nav className="mt-8 grid gap-1.5" aria-label="Secciones del sistema">
+      <nav className="mt-8 grid min-h-0 flex-1 content-start gap-1.5 overflow-y-auto pr-1" aria-label="Secciones del sistema">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const active = activeTab === tab.id;
           return (
             <button
               key={tab.id}
-              className={`flex items-center gap-3 rounded-xl px-3 py-3 text-left transition ${
+              className={`flex items-center gap-3 rounded-lg px-3 py-3 text-left transition ${
                 active
-                  ? 'bg-teal-700 text-white shadow-sm shadow-teal-900/20'
+                  ? 'bg-slate-950 text-white shadow-sm shadow-slate-900/20'
                   : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
               } ${tab.disabled ? 'cursor-not-allowed opacity-45' : ''}`}
               type="button"
@@ -38,7 +38,7 @@ export default function AppSidebar({
               <Icon className="h-5 w-5 shrink-0" />
               <span className="min-w-0">
                 <span className="block text-sm font-semibold">{tab.label}</span>
-                <span className={`mt-0.5 block truncate text-xs ${active ? 'text-teal-50' : 'text-slate-400'}`}>
+                <span className={`mt-0.5 block truncate text-xs ${active ? 'text-slate-200' : 'text-slate-400'}`}>
                   {tab.description}
                 </span>
               </span>
@@ -47,8 +47,8 @@ export default function AppSidebar({
         })}
       </nav>
 
-      <div className="mt-auto space-y-3">
-        <div className="rounded-2xl border border-sky-100 bg-sky-50 p-3 text-sky-950">
+      <div className="shrink-0 space-y-3 border-t border-slate-100 pt-4">
+        <div className="rounded-lg border border-sky-100 bg-sky-50/80 p-3 text-sky-950">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <BookOpen className="h-4 w-4" />
             Ayuda
@@ -63,7 +63,7 @@ export default function AppSidebar({
         </div>
 
         {activeUser ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+          <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm shadow-slate-200/60">
             <div className="text-xs font-semibold uppercase text-slate-500">Sesión activa</div>
             <div className="mt-1 truncate text-sm font-semibold text-slate-950">{activeUser.name}</div>
             <div className="mt-0.5 truncate text-xs text-slate-500">

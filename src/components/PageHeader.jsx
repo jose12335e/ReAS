@@ -9,9 +9,10 @@ export default function PageHeader({
   actions,
 }) {
   return (
-    <header className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/70 sm:px-5">
-      <div className="grid gap-4 xl:grid-cols-[minmax(300px,0.8fr)_minmax(500px,1.35fr)_minmax(290px,0.65fr)] xl:items-start">
-        <div className="min-w-0 xl:pt-1">
+    <header className="rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm shadow-slate-200/70 sm:px-5">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1 text-xs font-semibold uppercase text-slate-400">
             {breadcrumb.map((item, index) => (
               <span key={`${item}-${index}`} className="flex items-center gap-1">
@@ -20,19 +21,17 @@ export default function PageHeader({
               </span>
             ))}
           </div>
-          <h1 className="mt-2 text-2xl font-semibold tracking-normal text-slate-950 sm:text-3xl">
+          <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950 sm:text-4xl">
             {title}
           </h1>
-          {subtitle ? <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{subtitle}</p> : null}
-        </div>
+          {subtitle ? <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{subtitle}</p> : null}
+          </div>
 
-        <div className="min-w-0">{actions}</div>
-
-        {activeUser ? (
-          <div className="rounded-xl border border-teal-100 bg-teal-50/70 p-3">
+          {activeUser ? (
+          <div className="rounded-lg border border-teal-100 bg-teal-50/70 p-3 xl:w-[360px]">
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 gap-3">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-teal-700 ring-1 ring-teal-100">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-teal-700 ring-1 ring-teal-100">
                   <UserCheck className="h-4 w-4" />
                 </span>
                 <div className="min-w-0">
@@ -53,7 +52,10 @@ export default function PageHeader({
               </button>
             </div>
           </div>
-        ) : null}
+          ) : null}
+        </div>
+
+        {actions ? <div className="min-w-0 border-t border-slate-100 pt-4">{actions}</div> : null}
       </div>
     </header>
   );

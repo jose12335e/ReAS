@@ -35,13 +35,13 @@ function StatCard({ icon: Icon, label, value, tone = 'slate' }) {
   };
 
   return (
-    <div className={`rounded-2xl border border-l-4 border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70 ${tones[tone]}`}>
+    <div className={`rounded-lg border border-l-4 border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70 ${tones[tone]}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase text-slate-500">{label}</div>
           <div className="mt-2 text-2xl font-semibold text-slate-950">{value}</div>
         </div>
-        <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/80 shadow-sm ring-1 ring-slate-200">
+        <span className="grid h-10 w-10 place-items-center rounded-lg bg-white/80 shadow-sm ring-1 ring-slate-200">
           <Icon className="h-5 w-5" />
         </span>
       </div>
@@ -76,7 +76,7 @@ function EmptyDashboard({ onStartUpload, activeRulesCount = 3 }) {
         />
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/70">
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm shadow-slate-200/70">
         <div className="grid gap-0 lg:grid-cols-[1fr_360px]">
           <div className="p-6 sm:p-8">
             <span className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800">
@@ -102,10 +102,10 @@ function EmptyDashboard({ onStartUpload, activeRulesCount = 3 }) {
           <div className="border-t border-slate-200 bg-slate-50 p-6 lg:border-l lg:border-t-0">
             <div className="text-xs font-semibold uppercase text-slate-500">Flujo recomendado</div>
             <ol className="mt-3 space-y-3 text-sm text-slate-700">
-              <li className="rounded-xl bg-white p-3 ring-1 ring-slate-200">1. Cargar ponchado y auxiliares.</li>
-              <li className="rounded-xl bg-white p-3 ring-1 ring-slate-200">2. Validar mes y columnas.</li>
-              <li className="rounded-xl bg-white p-3 ring-1 ring-slate-200">3. Procesar y revisar auditoria.</li>
-              <li className="rounded-xl bg-white p-3 ring-1 ring-slate-200">4. Exportar Excel final.</li>
+              <li className="rounded-lg bg-white p-3 ring-1 ring-slate-200">1. Cargar ponchado y auxiliares.</li>
+              <li className="rounded-lg bg-white p-3 ring-1 ring-slate-200">2. Validar mes y columnas.</li>
+              <li className="rounded-lg bg-white p-3 ring-1 ring-slate-200">3. Procesar y revisar auditoria.</li>
+              <li className="rounded-lg bg-white p-3 ring-1 ring-slate-200">4. Exportar Excel final.</li>
             </ol>
           </div>
         </div>
@@ -194,7 +194,7 @@ function ProcessedDashboardOverview({ result, activeRulesCount, hasPendingAudit 
       </div>
 
       {missingPayrollSummary?.totalEmployees ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 shadow-sm shadow-rose-100">
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 shadow-sm shadow-rose-100">
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
             <div>
@@ -221,7 +221,7 @@ function ProcessedDashboardOverview({ result, activeRulesCount, hasPendingAudit 
 
       <Suspense
         fallback={
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm font-semibold text-slate-600 shadow-sm shadow-slate-200/70">
+          <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm font-semibold text-slate-600 shadow-sm shadow-slate-200/70">
             Preparando graficos...
           </div>
         }

@@ -25,7 +25,7 @@ export default function MetricCard({
   };
 
   return (
-    <article className="group overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70 transition hover:-translate-y-0.5 hover:shadow-md hover:shadow-slate-200">
+    <article className="overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase text-slate-500">{label}</p>
@@ -33,7 +33,7 @@ export default function MetricCard({
             {value}
           </div>
         </div>
-        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl border ${tones[tone]}`}>
+        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg border ${tones[tone]}`}>
           <Icon className="h-5 w-5" />
         </span>
       </div>
