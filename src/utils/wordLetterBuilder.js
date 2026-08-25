@@ -185,6 +185,17 @@ function readZipTextFiles(zip) {
   return files;
 }
 
+function extractPlaceholdersFromText(text = '') {
+  return [...new Set([...String(text).matchAll(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g)].map((match) => match[1]))];
+}
+
+function extractPlaceholdersFromZip(zip) {
+  const text = readZipTextFiles(zip)
+    .flatMap((fileItem) => extractTextNodes(fileItem.xml))
+    .join('\n');
+  return extractPlaceholdersFromText(text);
+}
+
 function extractTextNodes(xml = '') {
   return [...String(xml).matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)]
     .map((match) => xmlUnescape(match[1]).trim())
@@ -461,7 +472,7 @@ export async function inspectWordTemplate(file) {
   const sentenceBlocks = textFiles.flatMap((fileItem) => extractSentenceBlocks(fileItem.xml));
   const searchBlocks = uniqueBlocks([...sentenceBlocks, ...textBlocks, ...textNodes]);
   const text = searchBlocks.join('\n');
-  const placeholders = [...new Set([...text.matchAll(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g)].map((match) => match[1]))];
+  const placeholders = extractPlaceholdersFromText(text);
   const detectedMatches = detectTemplateValueMatches(searchBlocks);
   const candidates = [...new Set(searchBlocks.filter(shouldSuggestText))]
     .slice(0, 80)
@@ -551,33 +562,26 @@ function replaceVisibleText(xml = '', replacement = {}) {
   return { xml, changed: false };
 }
 
-function applyAssistedReplacementPlaceholders(zip, replacements = []) {
+function applyAssistedReplacements(zip, replacements = []) {
   const activeReplacements = replacements.filter((item) => item.from && item.to != null);
-  const assistedData = {};
   const skippedReplacements = [];
-  if (!activeReplacements.length) return { assistedData, skippedReplacements };
+  if (!activeReplacements.length) return { skippedReplacements };
   Object.keys(zip.files).forEach((path) => {
     if (!DOCX_TEXT_FILES.test(path)) return;
     const file = zip.file(path);
     if (!file) return;
     let xml = file.asText();
-    activeReplacements.forEach((replacement, index) => {
-      const key = `reas_auto_${index}`;
-      assistedData[key] = String(replacement.to ?? '');
-      const result = replaceVisibleText(xml, {
-        ...replacement,
-        to: `{{${key}}}`,
-      });
+    activeReplacements.forEach((replacement) => {
+      const result = replaceVisibleText(xml, replacement);
       if (result.changed) {
         xml = result.xml;
       } else {
-        delete assistedData[key];
         skippedReplacements.push(replacement);
       }
     });
     zip.file(path, xml);
   });
-  return { assistedData, skippedReplacements };
+  return { skippedReplacements };
 }
 
 export async function generateWordLetter({ templateFile, data, replacements = [], outputName = 'carta-reas' }) {
@@ -585,20 +589,24 @@ export async function generateWordLetter({ templateFile, data, replacements = []
   if (!/\.docx$/i.test(templateFile.name)) throw new Error('Solo se permiten plantillas .docx.');
   const arrayBuffer = await templateFile.arrayBuffer();
   const zip = new PizZip(arrayBuffer);
-  const { assistedData, skippedReplacements } = applyAssistedReplacementPlaceholders(zip, replacements);
-  const doc = new Docxtemplater(zip, {
-    paragraphLoop: true,
-    linebreaks: true,
-    delimiters: {
-      start: '{{',
-      end: '}}',
-    },
-    nullGetter() {
-      return '';
-    },
-  });
-  doc.render({ ...data, ...assistedData });
-  const renderedZip = doc.getZip();
+  const placeholders = extractPlaceholdersFromZip(zip);
+  let renderedZip = zip;
+  if (placeholders.length) {
+    const doc = new Docxtemplater(zip, {
+      paragraphLoop: true,
+      linebreaks: true,
+      delimiters: {
+        start: '{{',
+        end: '}}',
+      },
+      nullGetter() {
+        return '';
+      },
+    });
+    doc.render(data);
+    renderedZip = doc.getZip();
+  }
+  const { skippedReplacements } = applyAssistedReplacements(renderedZip, replacements);
   const blob = renderedZip.generate({
     type: 'blob',
     mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
