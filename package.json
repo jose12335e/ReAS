@@ -17,6 +17,7 @@
     "@tailwindcss/vite": "^4.2.4",
     "@tanstack/react-table": "^8.21.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "docx-preview": "^0.4.0",
     "docxtemplater": "^3.69.3",
     "exceljs": "^4.4.0",
     "jszip": "^3.10.1",

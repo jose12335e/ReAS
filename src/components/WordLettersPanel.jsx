@@ -11,7 +11,8 @@ import {
   Sparkles,
   UploadCloud,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { renderAsync } from 'docx-preview';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   WORD_LETTER_FIELDS,
   buildLetterData,
@@ -50,7 +51,6 @@ const DEFAULT_FIELD_KEYS = [
 
 const FIELD_LABELS = Object.fromEntries(WORD_LETTER_FIELDS.map((field) => [field.key, field.label]));
 const MANUAL_FIELD_KEY = '__manual';
-const PLACEHOLDER_PATTERN = /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g;
 
 function humanizeFieldKey(fieldKey = '') {
   return FIELD_LABELS[fieldKey] ?? String(fieldKey).replace(/[_.-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -108,6 +108,78 @@ function ReplacementAuditRow({ item }) {
   );
 }
 
+function WordDocumentPreview({ file }) {
+  const containerRef = useRef(null);
+  const [renderError, setRenderError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const previewContainer = containerRef.current;
+    async function renderDocument() {
+      const container = previewContainer;
+      if (!container || !file) return;
+      setRenderError('');
+      container.innerHTML = '';
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        if (cancelled) return;
+        await renderAsync(arrayBuffer, container, container, {
+          className: 'reas-docx',
+          inWrapper: true,
+          ignoreWidth: false,
+          ignoreHeight: false,
+          ignoreFonts: false,
+          breakPages: true,
+          ignoreLastRenderedPageBreak: false,
+          renderHeaders: true,
+          renderFooters: true,
+          renderFootnotes: true,
+          renderEndnotes: true,
+          renderComments: false,
+          renderChanges: false,
+          renderAltChunks: true,
+          useBase64URL: true,
+        });
+      } catch (error) {
+        if (!cancelled) {
+          setRenderError(error?.message || 'No se pudo mostrar la vista previa de la carta.');
+        }
+      }
+    }
+    renderDocument();
+    return () => {
+      cancelled = true;
+      if (previewContainer) previewContainer.innerHTML = '';
+    };
+  }, [file]);
+
+  return (
+    <div className="word-preview-shell h-[78vh] min-h-[720px] overflow-auto rounded-lg border border-slate-200 bg-slate-200/70 p-4">
+      <style>
+        {`
+          .word-preview-shell .docx-wrapper {
+            background: transparent;
+            padding: 0;
+          }
+          .word-preview-shell section.reas-docx {
+            margin: 0 auto 24px auto !important;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+          }
+          .word-preview-shell .reas-docx {
+            color: #111827;
+          }
+        `}
+      </style>
+      {renderError ? (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-800">
+          {renderError}
+        </div>
+      ) : null}
+      <div ref={containerRef} />
+    </div>
+  );
+}
+
 export default function WordLettersPanel({
   result,
   dghCode,
@@ -140,7 +212,6 @@ export default function WordLettersPanel({
   const finalData = useMemo(() => ({ ...baseData, ...valueOverrides }), [baseData, valueOverrides]);
   const placeholders = useMemo(() => templateInfo?.placeholders ?? [], [templateInfo]);
   const detectedMatches = useMemo(() => templateInfo?.detectedMatches ?? [], [templateInfo]);
-  const previewBlocks = useMemo(() => templateInfo?.previewBlocks ?? [], [templateInfo]);
   const selectedMatch = useMemo(
     () => detectedMatches.find((match) => match.id === selectedMatchId) ?? detectedMatches[0] ?? null,
     [detectedMatches, selectedMatchId],
@@ -325,34 +396,6 @@ export default function WordLettersPanel({
       delete next[selectedMatch.id];
       return next;
     });
-  }
-
-  function renderPreviewText(text, keyPrefix) {
-    const rawText = String(text ?? '');
-    if (!/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/.test(rawText)) return <span>{rawText}</span>;
-    const nodes = [];
-    let cursor = 0;
-    rawText.replace(PLACEHOLDER_PATTERN, (match, fieldKey, offset) => {
-      if (offset > cursor) {
-        nodes.push(<span key={`${keyPrefix}-text-${cursor}`}>{rawText.slice(cursor, offset)}</span>);
-      }
-      const value = finalData[fieldKey];
-      nodes.push(
-        <span
-          key={`${keyPrefix}-field-${offset}`}
-          className="mx-0.5 inline-flex rounded-md bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-800 ring-1 ring-emerald-200"
-          title={humanizeFieldKey(fieldKey)}
-        >
-          {value || 'pendiente'}
-        </span>,
-      );
-      cursor = offset + match.length;
-      return match;
-    });
-    if (cursor < rawText.length) {
-      nodes.push(<span key={`${keyPrefix}-text-end`}>{rawText.slice(cursor)}</span>);
-    }
-    return nodes;
   }
 
   async function handleGenerateWord() {
@@ -570,10 +613,10 @@ export default function WordLettersPanel({
                 <div>
                   <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
                     <FileText className="h-4 w-4 text-teal-700" />
-                    Carta editable
+                    Vista de la carta
                   </div>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Trabaja directo sobre la carta: amarillo pendiente, azul seleccionado y verde aprobado.
+                    La carta se muestra con el formato original del Word. Usa el panel derecho para aprobar o corregir los valores.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs font-semibold">
@@ -586,45 +629,43 @@ export default function WordLettersPanel({
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-                <div className="h-[72vh] min-h-[640px] overflow-y-auto rounded-lg border border-slate-200 bg-slate-100 p-4">
-                  <div className="mx-auto min-h-full max-w-4xl rounded-sm bg-white px-10 py-12 text-base leading-9 text-slate-900 shadow-sm sm:px-14">
-                    {previewBlocks.length ? (
-                      previewBlocks.map((block) => (
-                        <p key={block.id} className="mb-4 whitespace-pre-wrap">
-                          {block.parts.map((part, index) =>
-                            part.type === 'number' && part.matchId ? (
-                              <button
-                                key={`${block.id}-${index}`}
-                                type="button"
-                                className={`mx-0.5 rounded-md px-2 py-1 font-semibold transition ${
-                                  replacementMappings[part.matchId]
-                                    ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300'
-                                    : selectedMatchId === part.matchId
-                                      ? 'bg-sky-100 text-sky-900 ring-2 ring-sky-300'
-                                      : 'bg-amber-100 text-amber-900 ring-1 ring-amber-200 hover:bg-amber-200'
-                                }`}
-                                onClick={() => setSelectedMatchId(part.matchId)}
-                              >
-                                {part.text}
-                              </button>
-                            ) : (
-                              <span key={`${block.id}-${index}`}>
-                                {renderPreviewText(part.text, `${block.id}-${index}`)}
-                              </span>
-                            ),
-                          )}
-                        </p>
-                      ))
-                    ) : (
-                      <p className="text-sm text-slate-500">Carga una plantilla para ver la carta aqui.</p>
-                    )}
-                  </div>
-                </div>
+              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
+                <WordDocumentPreview file={templateFile} />
 
                 <div className="self-start rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70 xl:sticky xl:top-5">
                   {selectedMatch ? (
                     <div className="space-y-4">
+                      {detectedMatches.length ? (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-xs font-semibold uppercase text-slate-500">Numeros encontrados</div>
+                            <div className="text-xs font-semibold text-slate-500">
+                              {approvedNumberCount}/{detectedMatches.length}
+                            </div>
+                          </div>
+                          <div className="mt-2 max-h-44 space-y-1.5 overflow-y-auto pr-1">
+                            {detectedMatches.map((match, index) => (
+                              <button
+                                key={match.id}
+                                type="button"
+                                className={`flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-xs transition ${
+                                  selectedMatchId === match.id
+                                    ? 'border-sky-300 bg-sky-50 text-sky-900'
+                                    : replacementMappings[match.id]
+                                      ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                }`}
+                                onClick={() => setSelectedMatchId(match.id)}
+                              >
+                                <span className="min-w-0 truncate">
+                                  {index + 1}. {match.contextBefore || 'Numero en la carta'}
+                                </span>
+                                <span className="shrink-0 font-semibold">{match.oldValue}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <div className="text-xs font-semibold uppercase text-slate-500">Numero seleccionado</div>
