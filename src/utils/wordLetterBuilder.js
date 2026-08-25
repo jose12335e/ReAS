@@ -505,20 +505,12 @@ function buildTextNodes(xml = '') {
     open: `<w:t${match[1]}>`,
     close: '</w:t>',
     text: xmlUnescape(match[2]),
-    nextText: xmlUnescape(match[2]),
   }));
 }
 
-function serializeTextNodes(xml = '', nodes = []) {
-  if (!nodes.some((node) => node.text !== node.nextText)) return xml;
-  let output = '';
-  let cursor = 0;
-  nodes.forEach((node) => {
-    output += xml.slice(cursor, node.start);
-    output += `${node.open}${xmlEscape(node.nextText)}${node.close}`;
-    cursor = node.end;
-  });
-  return `${output}${xml.slice(cursor)}`;
+function replaceSingleTextNode(xml = '', node, nextText = '') {
+  if (!node) return xml;
+  return `${xml.slice(0, node.start)}${node.open}${xmlEscape(nextText)}${node.close}${xml.slice(node.end)}`;
 }
 
 function replaceVisibleText(xml = '', replacement = {}) {
@@ -527,7 +519,7 @@ function replaceVisibleText(xml = '', replacement = {}) {
   const oldValue = String(replacement.oldValue ?? '');
   const nextValue = String(replacement.to ?? '');
   const normalizedFrom = normalizeText(fromText);
-  if (!nodes.length || (!fromText && !oldValue)) return xml;
+  if (!nodes.length || (!fromText && !oldValue)) return { xml, changed: false };
 
   for (let startIndex = 0; startIndex < nodes.length; startIndex += 1) {
     let context = '';
@@ -539,25 +531,31 @@ function replaceVisibleText(xml = '', replacement = {}) {
       if (!hasContext && !hasSingleValueContext) continue;
 
       if (!oldValue) {
-        nodes[endIndex].nextText = nodes[endIndex].text.replace(replacement.from, nextValue);
-        return serializeTextNodes(xml, nodes);
+        if (!nodes[endIndex].text.includes(replacement.from)) return { xml, changed: false };
+        return {
+          xml: replaceSingleTextNode(xml, nodes[endIndex], nodes[endIndex].text.replace(replacement.from, nextValue)),
+          changed: true,
+        };
       }
 
       for (let replaceIndex = startIndex; replaceIndex <= endIndex; replaceIndex += 1) {
         if (!nodes[replaceIndex].text.includes(oldValue)) continue;
-        nodes[replaceIndex].nextText = nodes[replaceIndex].text.replace(oldValue, nextValue);
-        return serializeTextNodes(xml, nodes);
+        return {
+          xml: replaceSingleTextNode(xml, nodes[replaceIndex], nodes[replaceIndex].text.replace(oldValue, nextValue)),
+          changed: true,
+        };
       }
     }
   }
 
-  return xml;
+  return { xml, changed: false };
 }
 
 function applyAssistedReplacementPlaceholders(zip, replacements = []) {
   const activeReplacements = replacements.filter((item) => item.from && item.to != null);
   const assistedData = {};
-  if (!activeReplacements.length) return assistedData;
+  const skippedReplacements = [];
+  if (!activeReplacements.length) return { assistedData, skippedReplacements };
   Object.keys(zip.files).forEach((path) => {
     if (!DOCX_TEXT_FILES.test(path)) return;
     const file = zip.file(path);
@@ -566,14 +564,20 @@ function applyAssistedReplacementPlaceholders(zip, replacements = []) {
     activeReplacements.forEach((replacement, index) => {
       const key = `reas_auto_${index}`;
       assistedData[key] = String(replacement.to ?? '');
-      xml = replaceVisibleText(xml, {
+      const result = replaceVisibleText(xml, {
         ...replacement,
         to: `{{${key}}}`,
       });
+      if (result.changed) {
+        xml = result.xml;
+      } else {
+        delete assistedData[key];
+        skippedReplacements.push(replacement);
+      }
     });
     zip.file(path, xml);
   });
-  return assistedData;
+  return { assistedData, skippedReplacements };
 }
 
 export async function generateWordLetter({ templateFile, data, replacements = [], outputName = 'carta-reas' }) {
@@ -581,7 +585,7 @@ export async function generateWordLetter({ templateFile, data, replacements = []
   if (!/\.docx$/i.test(templateFile.name)) throw new Error('Solo se permiten plantillas .docx.');
   const arrayBuffer = await templateFile.arrayBuffer();
   const zip = new PizZip(arrayBuffer);
-  const assistedData = applyAssistedReplacementPlaceholders(zip, replacements);
+  const { assistedData, skippedReplacements } = applyAssistedReplacementPlaceholders(zip, replacements);
   const doc = new Docxtemplater(zip, {
     paragraphLoop: true,
     linebreaks: true,
@@ -602,6 +606,7 @@ export async function generateWordLetter({ templateFile, data, replacements = []
   return {
     blob,
     fileName: `${sanitizeFileName(outputName)}.docx`,
+    skippedReplacements,
   };
 }
 

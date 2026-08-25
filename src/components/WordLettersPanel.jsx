@@ -285,7 +285,14 @@ export default function WordLettersPanel({
       });
       downloadBlob(output.blob, output.fileName);
       saveTemplateMappings(templateFile.name, { replacements: replacementMappings });
-      setStatus({ tone: 'emerald', message: `Carta generada correctamente: ${output.fileName}` });
+      if (output.skippedReplacements?.length) {
+        setStatus({
+          tone: 'amber',
+          message: `Carta generada: ${output.fileName}. ${output.skippedReplacements.length} reemplazo(s) no se aplicaron porque Word dividio el texto de forma insegura; revisa la vista "Viejo / Nuevo" o usa campos {{ }} para esos datos.`,
+        });
+      } else {
+        setStatus({ tone: 'emerald', message: `Carta generada correctamente: ${output.fileName}` });
+      }
     } catch (error) {
       setStatus({
         tone: 'rose',
