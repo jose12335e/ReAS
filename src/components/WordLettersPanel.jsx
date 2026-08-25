@@ -50,6 +50,11 @@ const DEFAULT_FIELD_KEYS = [
 
 const FIELD_LABELS = Object.fromEntries(WORD_LETTER_FIELDS.map((field) => [field.key, field.label]));
 const MANUAL_FIELD_KEY = '__manual';
+const PLACEHOLDER_PATTERN = /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g;
+
+function humanizeFieldKey(fieldKey = '') {
+  return FIELD_LABELS[fieldKey] ?? String(fieldKey).replace(/[_.-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
 
 function compactReportLabel(report) {
   if (!report) return 'Reporte sin nombre';
@@ -60,7 +65,7 @@ function FieldEditor({ fieldKey, value, onChange }) {
   return (
     <label className="grid gap-1.5 rounded-xl border border-slate-200 bg-white p-3">
       <span className="text-xs font-semibold uppercase text-slate-500">
-        {FIELD_LABELS[fieldKey] ?? fieldKey}
+        {humanizeFieldKey(fieldKey)}
       </span>
       <input
         className="h-10 rounded-lg border border-slate-300 bg-slate-50 px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-teal-600 focus:bg-white focus:ring-2 focus:ring-teal-100"
@@ -166,7 +171,7 @@ export default function WordLettersPanel({
             oldValue: detected?.oldValue ?? fallbackCandidate?.oldValue,
             to: nextValue,
             fieldKey,
-            label: fieldKey === MANUAL_FIELD_KEY ? 'Valor manual' : FIELD_LABELS[fieldKey] ?? fieldKey,
+            label: fieldKey === MANUAL_FIELD_KEY ? 'Valor manual' : humanizeFieldKey(fieldKey),
             source: detected?.contextBefore ?? fallbackCandidate?.value ?? matchId,
             mode: detected ? 'Numero aprobado por el usuario' : 'Reemplazo asistido manual',
             auditOldValue: oldValue,
@@ -180,10 +185,10 @@ export default function WordLettersPanel({
     () => [
       ...placeholders.map((fieldKey) => ({
         id: `placeholder-${fieldKey}`,
-        label: FIELD_LABELS[fieldKey] ?? fieldKey,
-        source: `{{${fieldKey}}}`,
-        mode: 'Campo de plantilla',
-        oldValue: `{{${fieldKey}}}`,
+        label: humanizeFieldKey(fieldKey),
+        source: `Campo automatico: ${humanizeFieldKey(fieldKey)}`,
+        mode: 'Campo automatico de la carta',
+        oldValue: 'Valor escrito en la plantilla',
         newValue: finalData[fieldKey] ?? '',
       })),
       ...activeReplacementEntries.map((entry, index) => ({
@@ -242,7 +247,7 @@ export default function WordLettersPanel({
       setStatus({
         tone: info.hasPlaceholders ? 'emerald' : 'amber',
         message: info.hasPlaceholders
-          ? `Plantilla lista: ${info.placeholders.length} campo(s) {{ }} detectado(s).`
+          ? `Plantilla lista: ${info.placeholders.length} campo(s) automatico(s) detectado(s).`
           : `Plantilla en modo asistido: ${info.detectedMatches.length} numero(s) detectado(s). Aprueba solo los que correspondan.`,
       });
     } catch (error) {
@@ -322,6 +327,34 @@ export default function WordLettersPanel({
     });
   }
 
+  function renderPreviewText(text, keyPrefix) {
+    const rawText = String(text ?? '');
+    if (!/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/.test(rawText)) return <span>{rawText}</span>;
+    const nodes = [];
+    let cursor = 0;
+    rawText.replace(PLACEHOLDER_PATTERN, (match, fieldKey, offset) => {
+      if (offset > cursor) {
+        nodes.push(<span key={`${keyPrefix}-text-${cursor}`}>{rawText.slice(cursor, offset)}</span>);
+      }
+      const value = finalData[fieldKey];
+      nodes.push(
+        <span
+          key={`${keyPrefix}-field-${offset}`}
+          className="mx-0.5 inline-flex rounded-md bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-800 ring-1 ring-emerald-200"
+          title={humanizeFieldKey(fieldKey)}
+        >
+          {value || 'pendiente'}
+        </span>,
+      );
+      cursor = offset + match.length;
+      return match;
+    });
+    if (cursor < rawText.length) {
+      nodes.push(<span key={`${keyPrefix}-text-end`}>{rawText.slice(cursor)}</span>);
+    }
+    return nodes;
+  }
+
   async function handleGenerateWord() {
     if (!sourceResult) {
       setStatus({ tone: 'rose', message: 'Primero procesa o carga un reporte para alimentar la carta.' });
@@ -334,7 +367,7 @@ export default function WordLettersPanel({
     if (!placeholders.length && !activeReplacementEntries.length) {
       setStatus({
         tone: 'amber',
-        message: 'La plantilla no tiene campos ni reemplazos seleccionados. Selecciona textos a reemplazar o agrega campos {{ }}.',
+        message: 'La plantilla no tiene campos ni reemplazos seleccionados. Selecciona los numeros que quieres actualizar o usa campos automaticos en la carta.',
       });
       return;
     }
@@ -352,7 +385,7 @@ export default function WordLettersPanel({
       if (output.skippedReplacements?.length) {
         setStatus({
           tone: 'amber',
-          message: `Carta generada: ${output.fileName}. ${output.skippedReplacements.length} reemplazo(s) no se aplicaron porque Word dividio el texto de forma insegura; revisa la vista "Viejo / Nuevo" o usa campos {{ }} para esos datos.`,
+          message: `Carta generada: ${output.fileName}. ${output.skippedReplacements.length} reemplazo(s) no se aplicaron porque Word dividio ese texto internamente; revisa el cambio o usa un campo automatico para esos datos.`,
         });
       } else {
         setStatus({ tone: 'emerald', message: `Carta generada correctamente: ${output.fileName}` });
@@ -576,7 +609,9 @@ export default function WordLettersPanel({
                                 {part.text}
                               </button>
                             ) : (
-                              <span key={`${block.id}-${index}`}>{part.text}</span>
+                              <span key={`${block.id}-${index}`}>
+                                {renderPreviewText(part.text, `${block.id}-${index}`)}
+                              </span>
                             ),
                           )}
                         </p>
