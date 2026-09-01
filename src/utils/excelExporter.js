@@ -130,6 +130,11 @@ const TABLE_PRINT_PRESETS = {
     orientation: 'landscape',
     scale: 74,
   },
+  summaryReport: {
+    marginPreset: 'list',
+    orientation: 'landscape',
+    scale: 85,
+  },
 };
 
 function normalizeWorksheetName(name) {
@@ -726,6 +731,150 @@ function generalEventMinutes(employee) {
   return parseDuration(employee.tiempoEventualidadJustificada) + nonJustifiedEventMinutes(employee);
 }
 
+function formatReportNumber(value) {
+  return Number(value || 0).toLocaleString('es-DO');
+}
+
+function formatReportPercent(value) {
+  return `${Math.round(Number(value || 0))}%`;
+}
+
+function hoursToDurationText(totalHours = 0) {
+  return formatDuration(Math.round(Number(totalHours || 0) * 60)).replace(/^0+(?=\d{2}:)/, '');
+}
+
+function getSummaryEmployeeName(employee) {
+  return String(employee?.nombre || employee?.codigo || 'Sin nombre').trim();
+}
+
+function buildSummaryRankingLines(employees = [], { title, valueKey, suffix, formatter = formatReportNumber, limit = 5 }) {
+  const rankedEmployees = employees
+    .map((employee) => ({
+      name: getSummaryEmployeeName(employee),
+      value:
+        valueKey === 'tiempoNoTrabajadoNoJustificado'
+          ? parseDuration(employee[valueKey])
+          : Number(employee[valueKey] || 0),
+      rawValue: employee[valueKey],
+    }))
+    .filter((employee) => employee.value > 0)
+    .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name, 'es'))
+    .slice(0, limit);
+
+  return [
+    { type: 'section', label: title },
+    ...(rankedEmployees.length
+      ? rankedEmployees.map((employee) => ({
+          type: 'rank',
+          label: employee.name,
+          value: `${formatter(employee.rawValue)} ${suffix}`,
+        }))
+      : [{ type: 'rank', label: 'Sin registros', value: '' }]),
+  ];
+}
+
+function buildReportSummaryBlocks(result) {
+  const summary = result?.summaryGeneral ?? {};
+  const employees = result?.summaryByEmployee ?? [];
+  const diasCumplimiento =
+    Number(summary.diasATrabajar || 0) > 0
+      ? (Number(summary.diasTrabajadosCompletos || 0) / Number(summary.diasATrabajar || 0)) * 100
+      : 0;
+  const horasCumplimiento =
+    Number(summary.horasEsperadas || 0) > 0
+      ? (Number(summary.horasReconocidas || 0) / Number(summary.horasEsperadas || 0)) * 100
+      : 0;
+  const tiempoEventualidadesNoJustificadasMin =
+    parseDuration(summary.tiempoTardanzaNoJustificada) +
+    parseDuration(summary.tiempoSalidaTempranaNoJustificada) +
+    parseDuration(summary.tiempoAusenciaNoJustificada);
+  const eventualidadesJustificadasCount = employees.reduce(
+    (total, employee) => total + Number(employee.eventualidadesJustificadas || 0),
+    0,
+  );
+  const tiempoEventualidadesJustificadasMin = employees.reduce((total, employee) => {
+    if (Number(employee.eventualidadesJustificadas || 0) <= 0) return total;
+    return total + parseDuration(employee.tiempoEventualidadJustificada);
+  }, 0);
+  const tiempoGeneralEventualidadesMin =
+    tiempoEventualidadesJustificadasMin + tiempoEventualidadesNoJustificadasMin;
+  const rankingLines = [
+    ...buildSummaryRankingLines(employees, {
+      title: 'PERSONAS CON MAS AUSENCIAS',
+      valueKey: 'ausenciasNoJustificadas',
+      suffix: 'ausencias',
+    }),
+    ...buildSummaryRankingLines(employees, {
+      title: 'PERSONAS CON MAS TARDANZAS',
+      valueKey: 'tardanzasNoJustificadas',
+      suffix: 'tardanzas',
+    }),
+    ...buildSummaryRankingLines(employees, {
+      title: 'PERSONAS CON MAS SALIDAS TEMPRANAS',
+      valueKey: 'salidasTempranasNoJustificadas',
+      suffix: 'salidas tempranas',
+    }),
+    ...buildSummaryRankingLines(employees, {
+      title: 'PERSONAS CON MAYOR TIEMPO ACUMULADO',
+      valueKey: 'tiempoNoTrabajadoNoJustificado',
+      suffix: 'horas',
+      formatter: (value) => formatDuration(parseDuration(value)),
+    }),
+  ];
+
+  return [
+    {
+      title: 'Tiempo y dias a trabajar vs tiempo y dias trabajado',
+      lines: [
+        { label: 'Dias a trabajar', value: formatReportNumber(summary.diasATrabajar) },
+        { label: 'Dias trabajados', value: formatReportNumber(summary.diasTrabajadosCompletos) },
+        { label: 'Representando un cumplimiento de', value: formatReportPercent(diasCumplimiento) },
+        { label: 'Horas a trabajar', value: hoursToDurationText(summary.horasEsperadas) },
+        { label: 'Horas trabajadas', value: hoursToDurationText(summary.horasReconocidas) },
+        { label: 'Representando un cumplimiento de', value: formatReportPercent(horasCumplimiento) },
+        { label: 'Tasa de ausentismo', value: formatReportPercent(summary.tasaAusentismo) },
+      ],
+    },
+    {
+      title: 'Tiempo general acumulado en eventualidades',
+      lines: [
+        {
+          label: 'Tiempo acumulado de eventualidades justificadas y no justificadas',
+          value: formatDuration(tiempoGeneralEventualidadesMin),
+        },
+        { label: 'Ver viatico', value: formatReportNumber(summary.verViatico) },
+        { label: 'Ponches irregulares', value: formatReportNumber(summary.ponchesIrregulares) },
+      ],
+    },
+    {
+      title: 'Eventualidades justificadas registradas',
+      lines: [
+        { label: 'Eventualidades justificadas', value: formatReportNumber(eventualidadesJustificadasCount) },
+        { label: 'Tiempo acumulado', value: formatDuration(tiempoEventualidadesJustificadasMin) },
+      ],
+    },
+    {
+      title: 'Eventualidades no justificadas registradas',
+      lines: [
+        { label: 'Tardanzas', value: formatReportNumber(summary.tardanzasNoJustificadas) },
+        { label: 'Tiempo de tardanza acumulado', value: formatDuration(parseDuration(summary.tiempoTardanzaNoJustificada)) },
+        { label: 'Salidas tempranas', value: formatReportNumber(summary.salidasTempranasNoJustificadas) },
+        {
+          label: 'Tiempo de salidas tempranas acumulado',
+          value: formatDuration(parseDuration(summary.tiempoSalidaTempranaNoJustificada)),
+        },
+        { label: 'Ausencias', value: formatReportNumber(summary.ausenciasNoJustificadas) },
+        { label: 'Tiempo de ausencias acumulado', value: formatDuration(parseDuration(summary.tiempoAusenciaNoJustificada)) },
+        { label: 'Tiempo total no justificado', value: formatDuration(tiempoEventualidadesNoJustificadasMin) },
+      ],
+    },
+    {
+      title: 'Ranking de eventualidades por colaborador',
+      lines: rankingLines,
+    },
+  ];
+}
+
 function setDurationCell(cell, value) {
   cell.value = typeof value === 'number' ? value : durationStringToExcelDuration(value);
   cell.numFmt = TIME_FORMAT;
@@ -869,6 +1018,131 @@ function addNoDataRow(worksheet, rowNumber, columnCount) {
   cell.value = 'Sin registros';
   cell.alignment = { vertical: 'middle', horizontal: 'center' };
   applyBorder(cell);
+}
+
+function styleSummaryRange(worksheet, startRow, startCol, endRow, endCol, fill = TEMPLATE_COLORS.white) {
+  for (let row = startRow; row <= endRow; row += 1) {
+    for (let col = startCol; col <= endCol; col += 1) {
+      const cell = worksheet.getCell(row, col);
+      const border = {};
+      if (row === startRow) border.top = { style: 'thin', color: { argb: 'FFCBD5E1' } };
+      if (row === endRow) border.bottom = { style: 'thin', color: { argb: 'FFCBD5E1' } };
+      if (col === startCol) border.left = { style: 'thin', color: { argb: 'FFCBD5E1' } };
+      if (col === endCol) border.right = { style: 'thin', color: { argb: 'FFCBD5E1' } };
+      fillCell(cell, fill);
+      cell.border = border;
+    }
+  }
+}
+
+function addSummaryBlock(worksheet, block, startRow, startCol, endCol) {
+  const totalRows = Math.max(7, block.lines.length + 3);
+  const endRow = startRow + totalRows - 1;
+  styleSummaryRange(worksheet, startRow, startCol, endRow, endCol);
+
+  worksheet.mergeCells(startRow, startCol, startRow, endCol);
+  const titleCell = worksheet.getCell(startRow, startCol);
+  titleCell.value = block.title;
+  titleCell.font = { name: 'Aptos', size: 12, bold: true, color: { argb: 'FF0F172A' } };
+  titleCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+  worksheet.getRow(startRow).height = 24;
+
+  let rowNumber = startRow + 2;
+  block.lines.forEach((line) => {
+    worksheet.mergeCells(rowNumber, startCol, rowNumber, endCol);
+    const cell = worksheet.getCell(rowNumber, startCol);
+    if (line.type === 'section') {
+      cell.value = line.label;
+      cell.font = { name: 'Aptos', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+      worksheet.getRow(rowNumber).height = 22;
+    } else {
+      const suffix = line.type === 'rank' ? ' - ' : ': ';
+      cell.value = {
+        richText: [
+          {
+            text: `• ${line.label}${line.value ? suffix : ''}`,
+            font: { name: 'Aptos', size: 10, italic: true, color: { argb: 'FF334155' } },
+          },
+          {
+            text: line.value ?? '',
+            font: { name: 'Aptos', size: 10, bold: true, italic: true, color: { argb: 'FF0F172A' } },
+          },
+        ],
+      };
+      cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+      worksheet.getRow(rowNumber).height = 21;
+    }
+    rowNumber += 1;
+  });
+
+  return endRow + 2;
+}
+
+function addReportSummarySection(worksheet, result, startRow, title) {
+  worksheet.mergeCells(startRow, 1, startRow, 10);
+  const titleCell = worksheet.getCell(startRow, 1);
+  titleCell.value = title;
+  titleCell.font = { name: 'Aptos', size: 13, bold: true, color: { argb: TEMPLATE_COLORS.white } };
+  titleCell.fill = HEADER_FILL;
+  titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+  applyBorder(titleCell, 'FF1E293B');
+  worksheet.getRow(startRow).height = 26;
+
+  const blocks = buildReportSummaryBlocks(result);
+  const firstRow = startRow + 2;
+  const firstColumnEnd = 5;
+  const secondColumnStart = 6;
+  let nextLeftRow = addSummaryBlock(worksheet, blocks[0], firstRow, 1, firstColumnEnd);
+  let nextRightRow = addSummaryBlock(worksheet, blocks[1], firstRow, secondColumnStart, 10);
+  nextLeftRow = addSummaryBlock(worksheet, blocks[2], nextLeftRow, 1, firstColumnEnd);
+  nextRightRow = addSummaryBlock(worksheet, blocks[3], nextRightRow, secondColumnStart, 10);
+  const rankingStartRow = Math.max(nextLeftRow, nextRightRow);
+  const nextRow = addSummaryBlock(worksheet, blocks[4], rankingStartRow, 1, 10);
+
+  return nextRow + 1;
+}
+
+function addReportSummarySheet(workbook, result, reportOptions = {}) {
+  const worksheet = workbook.addWorksheet('Resumen para reporte', {
+    views: [{ showGridLines: false }],
+    properties: { tabColor: { argb: 'FF0F766E' } },
+  });
+  setColumns(worksheet, [15, 15, 15, 15, 15, 15, 15, 15, 15, 15]);
+
+  worksheet.mergeCells('A1:J1');
+  const headingCell = worksheet.getCell('A1');
+  headingCell.value = 'Resumen para reporte';
+  headingCell.font = { name: 'Aptos', size: 18, bold: true, color: { argb: 'FF0F172A' } };
+  headingCell.alignment = { vertical: 'middle', horizontal: 'left' };
+  worksheet.getRow(1).height = 30;
+
+  worksheet.mergeCells('A2:J2');
+  const subtitleCell = worksheet.getCell('A2');
+  subtitleCell.value = 'Datos listos para copiar al cuadro institucional.';
+  subtitleCell.font = { name: 'Aptos', size: 10, color: { argb: 'FF475569' } };
+  subtitleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+  worksheet.getRow(2).height = 20;
+
+  let rowNumber = 4;
+  const monthlyResults = result?.monthlyResults ?? [];
+  const shouldShowMonthlySections =
+    result?.metadata?.monthSelectionMode === 'all' && monthlyResults.length > 1;
+
+  rowNumber = addReportSummarySection(worksheet, result, rowNumber, 'TOTAL GENERAL');
+  if (shouldShowMonthlySections) {
+    monthlyResults.forEach((monthResult) => {
+      const monthLabel = monthResult?.metadata?.selectedMonth?.label ?? 'MES SIN IDENTIFICAR';
+      rowNumber = addReportSummarySection(worksheet, monthResult, rowNumber, monthLabel.toUpperCase());
+    });
+  }
+
+  worksheet.eachRow((row) => {
+    row.eachCell((cell) => {
+      cell.protection = { locked: false };
+    });
+  });
+  applyPageLayoutView(worksheet, 10, 'summaryReport', reportOptions);
 }
 
 function createContinuationManager({
@@ -2390,6 +2664,7 @@ export async function exportAttendanceReport(result, reportOptions = {}) {
   } else {
     addTemplateSheets(workbook, result, reportOptions);
   }
+  addReportSummarySheet(workbook, result, reportOptions);
   const reportData = buildReportWorkbookData(result);
   reportData.sheets.forEach((sheet) => addRowsToWorksheet(workbook, sheet.name, sheet.rows));
   autoFitWorkbookTables(workbook);
