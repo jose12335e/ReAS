@@ -34,7 +34,7 @@ const TIME_FORMAT = '[h]:mm:ss';
 const PAPER_SIZE_LETTER = 1;
 const DEFAULT_DGH_CODE = 'JCE-DGH-6064-2026';
 const CONTROL_SHEET_NAME = 'Control del reporte';
-const CONTROL_SHEET_PASSWORD = 'ReAS-Control-2026';
+const CONTROL_SHEET_PASSWORD = '20220270';
 const INSTITUTIONAL_FOOTER =
   '&L&G&R&"Aptos,Regular"&10Av. Gregorio Luperón esq. Av. 27 de Febrero,\n' +
   'Plaza de la Bandera, Santo Domingo, D. N.\n' +
